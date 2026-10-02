@@ -12,7 +12,7 @@ export default defineConfig({
     },
   },
   server: {
-    allowedHosts: ["compromise-liked-ready-removal.trycloudflare.com"],
+    allowedHosts: [],
     proxy: {
       '/socket.io': {
         target: 'http://localhost:3001',
