@@ -9,7 +9,8 @@ if (!sessionId) {
   sessionId = Math.random().toString(36).substring(2, 15);
   localStorage.setItem('sessionId', sessionId);
 }
-const socket = io({ auth: { sessionId } });
+const SERVER_URL = import.meta.env.VITE_SERVER_URL || '';
+const socket = io(SERVER_URL, { auth: { sessionId } });
 
 type GameState = 'lobby' | 'locking' | 'ready' | 'playing' | 'ended';
 type GameMode = 'automated' | 'call';
