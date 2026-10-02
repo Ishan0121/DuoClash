@@ -7,6 +7,10 @@ import { Toaster, toast } from 'sonner';
 import confetti from 'canvas-confetti';
 import { playClick, playSuccess, playError } from './lib/sounds';
 
+import GameSelection from './components/GameSelection';
+import Minefield from './components/Minefield';
+import Lobby from './components/Lobby';
+
 let sessionId = localStorage.getItem('sessionId');
 if (!sessionId) {
   sessionId = Math.random().toString(36).substring(2, 15);
@@ -35,11 +39,12 @@ interface RoomState {
   roomId: string;
   turn: string | null;
   mode: GameMode;
-  settings: { greyOutUsed: boolean; timerEnabled: boolean; showOpponentProgress?: boolean };
+  settings: { greyOutUsed: boolean; timerEnabled: boolean; showOpponentProgress?: boolean, mineGridSize?: number, mineTreasureCount?: number, mineBombCount?: number };
   turnStartTime?: number;
-  state: GameState;
-  me: PlayerState;
-  opponent: OpponentState | null;
+  state: GameState | 'selecting_game' | 'selecting_game_conflict' | 'planting';
+  gameType?: 'word' | 'mine' | null;
+  me: PlayerState & { gameVote?: string, isPlanted?: boolean, revealed?: any[] };
+  opponent: OpponentState & { gameVote?: string, isPlanted?: boolean, revealed?: any[] } | null;
 }
 
 export default function App() {
@@ -214,7 +219,11 @@ export default function App() {
         playSuccess();
         confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 } });
       } else {
-        playError();
+        if (data.reason !== 'found_all_treasures') {
+          playError();
+        } else {
+          playError(); // You lost
+        }
       }
     });
 
@@ -327,76 +336,17 @@ export default function App() {
   const isMyTurn = room?.turn === sessionId;
 
   if (!room || room.state === 'lobby') {
-    return (
-      <div className="min-h-[100dvh] flex flex-col items-center justify-center p-6 space-y-8 max-w-md mx-auto">
-        <Toaster position="top-center" theme="dark" />
-        <div className="text-center space-y-2">
-          <h1 className="text-4xl font-bold tracking-tight">Word Deduction</h1>
-          <p className="text-muted-foreground">Outsmart your opponent in real-time.</p>
-        </div>
+    return <Lobby isServerConnected={isServerConnected} room={room} joinCode={joinCode} setJoinCode={setJoinCode} handleCreateRoom={handleCreateRoom} handleJoinRoom={handleJoinRoom} socket={socket} />;
+  }
 
+  if (room.state === 'selecting_game' || room.state === 'selecting_game_conflict') {
+    return <GameSelection room={room} socket={socket} sessionId={sessionId} />;
+  }
 
-
-        <div className="w-full space-y-4">
-          {!isServerConnected ? (
-            <div className="flex flex-col items-center justify-center p-8 space-y-4 rounded-2xl bg-secondary/30 border border-border">
-              <Loader2 className="w-8 h-8 animate-spin text-primary" />
-              <div className="text-center space-y-1">
-                <p className="font-semibold text-foreground">Waking up server...</p>
-                <p className="text-xs text-muted-foreground">This may take up to 50 seconds if the server was asleep.</p>
-              </div>
-            </div>
-          ) : room?.roomId ? (
-            <div className="p-6 rounded-xl bg-secondary/50 text-center space-y-3 border">
-              <p className="text-sm text-muted-foreground uppercase tracking-wider">Room Code</p>
-              <h2 className="text-5xl font-mono tracking-widest">{room.roomId}</h2>
-              <p className="text-sm mt-4">Waiting for opponent...</p>
-              <div className="flex flex-col items-center gap-4 mt-2">
-                <Loader2 className="w-6 h-6 animate-spin mx-auto opacity-50" />
-                <button 
-                  onClick={() => socket.emit('leave_room', { roomId: room.roomId })}
-                  className="px-4 py-2 mt-2 rounded-xl bg-destructive/10 text-destructive font-medium hover:bg-destructive/20 transition-colors text-sm flex items-center gap-2"
-                >
-                  <X className="w-4 h-4" /> Cancel
-                </button>
-              </div>
-            </div>
-          ) : (
-            <>
-              <button 
-                onClick={handleCreateRoom}
-                className="w-full py-4 rounded-xl bg-primary text-primary-foreground font-semibold text-lg flex items-center justify-center gap-2 active:scale-[0.98] transition-transform"
-              >
-                <LogIn className="w-5 h-5" /> Create Room
-              </button>
-              
-              <div className="relative py-4 flex items-center justify-center">
-                <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-border"></div></div>
-                <div className="relative bg-background px-4 text-sm text-muted-foreground uppercase tracking-widest">or</div>
-              </div>
-
-              <div className="flex gap-2">
-                <input 
-                  type="text" 
-                  maxLength={6}
-                  placeholder="Enter 6-digit code"
-                  value={joinCode}
-                  onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
-                  className="flex-1 bg-secondary/50 border border-border rounded-xl px-4 py-4 text-center text-lg font-mono tracking-widest uppercase focus:outline-none focus:ring-2 focus:ring-ring"
-                />
-                <button 
-                  onClick={handleJoinRoom}
-                  disabled={joinCode.length !== 6}
-                  className="px-6 rounded-xl bg-secondary text-secondary-foreground font-bold disabled:opacity-50 active:scale-[0.98] transition-transform"
-                >
-                  Join
-                </button>
-              </div>
-            </>
-          )}
-        </div>
-      </div>
-    );
+  if (room.gameType === 'mine') {
+    if (room.state === 'planting' || room.state === 'ready' || room.state === 'playing') {
+      return <Minefield room={room} socket={socket} sessionId={sessionId} />;
+    }
   }
 
   if (room.state === 'locking' || room.state === 'ready') {
@@ -484,8 +434,12 @@ export default function App() {
         <h2 className="text-5xl font-bold tracking-tighter">
           {isWinner ? 'You Won!' : 'You Lost!'}
         </h2>
-        <p className="text-xl text-muted-foreground">Opponent's word was: <span className="font-mono font-bold text-foreground">{opponentWordToShow}</span></p>
-        <div className="flex gap-4 w-full">
+        
+        {room.gameType === 'word' && (
+          <p className="text-xl text-muted-foreground">Opponent's word was: <span className="font-mono font-bold text-foreground">{opponentWordToShow}</span></p>
+        )}
+        
+        <div className="flex gap-4 w-full mt-8">
           <button onClick={() => socket.emit('leave_room', { roomId: room.roomId })} className="flex-1 py-4 rounded-xl bg-secondary text-secondary-foreground font-bold active:scale-[0.98] transition-transform">Leave Room</button>
           <button onClick={() => socket.emit('restart_game', { roomId: room.roomId })} className="flex-[2] py-4 rounded-xl bg-primary text-primary-foreground font-bold active:scale-[0.98] transition-transform">Play Again</button>
         </div>

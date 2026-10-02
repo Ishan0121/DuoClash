@@ -1,4 +1,4 @@
-# Word Deduction
+# DuoClash
 
 A real-time multiplayer word-guessing and deduction game where players try to outsmart their opponents by guessing their locked word first.
 
