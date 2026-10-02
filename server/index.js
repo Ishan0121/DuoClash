@@ -89,6 +89,10 @@ io.on('connection', (socket) => {
   socket.join(socket.sessionId);
   console.log('User connected:', socket.sessionId);
 
+  // Store the active socket ID for each session
+  if (!global.activeSockets) global.activeSockets = {};
+  global.activeSockets[socket.sessionId] = socket.id;
+
   if (disconnectTimeouts[socket.sessionId]) {
     clearTimeout(disconnectTimeouts[socket.sessionId]);
     delete disconnectTimeouts[socket.sessionId];
@@ -106,9 +110,9 @@ io.on('connection', (socket) => {
     rooms[roomId] = {
       roomId,
       hostId: socket.sessionId,
-      settings: { greyOutUsed: true, timerEnabled: false },
+      settings: { greyOutUsed: true, timerEnabled: false, showOpponentProgress: false },
       players: {
-        [socket.sessionId]: { id: socket.sessionId, word: null }
+        [socket.sessionId]: { id: socket.sessionId, word: null, knownTiles: [] }
       },
       turn: null,
       mode: 'automated',
@@ -125,7 +129,7 @@ io.on('connection', (socket) => {
     if (room && room.state === 'lobby') {
       const playerIds = Object.keys(room.players);
       if (playerIds.length < 2) {
-        room.players[socket.sessionId] = { id: socket.sessionId, word: null };
+        room.players[socket.sessionId] = { id: socket.sessionId, word: null, knownTiles: [] };
         sessions[socket.sessionId] = roomId;
         socket.join(roomId);
         room.state = 'locking';
@@ -208,6 +212,14 @@ io.on('connection', (socket) => {
     const opponentId = Object.keys(room.players).find(id => id !== socket.sessionId);
     if (opponentId) {
       io.to(opponentId).emit('receive_hint', { hint });
+    }
+  });
+
+  socket.on('update_progress', ({ roomId, knownTiles }) => {
+    const room = rooms[roomId];
+    if (room && room.players[socket.sessionId]) {
+      room.players[socket.sessionId].knownTiles = knownTiles;
+      broadcastGameState(roomId);
     }
   });
 
@@ -312,7 +324,8 @@ io.on('connection', (socket) => {
         stateForPlayer.opponent = {
           id: opponentId,
           wordLength: room.players[opponentId].word ? room.players[opponentId].word.length : 0,
-          isLocked: !!room.players[opponentId].word
+          isLocked: !!room.players[opponentId].word,
+          knownTiles: room.players[opponentId].knownTiles
         };
       }
       io.to(id).emit('game_state_update', stateForPlayer);
@@ -328,6 +341,7 @@ io.on('connection', (socket) => {
     room.turn = null;
     Object.keys(room.players).forEach(id => {
       room.players[id].word = null;
+      room.players[id].knownTiles = [];
     });
     
     io.to(roomId).emit('game_restarted', { roomId });
@@ -364,6 +378,12 @@ io.on('connection', (socket) => {
   socket.on('disconnect', () => {
     console.log('User disconnected:', socket.sessionId);
     
+    // Only schedule disconnect if this is still the active socket for the session
+    if (global.activeSockets && global.activeSockets[socket.sessionId] !== socket.id) {
+      console.log('Ignoring disconnect for old socket of session:', socket.sessionId);
+      return;
+    }
+
     disconnectTimeouts[socket.sessionId] = setTimeout(() => {
       const roomId = sessions[socket.sessionId];
       if (roomId) {

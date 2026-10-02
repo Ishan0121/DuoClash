@@ -28,13 +28,14 @@ interface OpponentState {
   id: string;
   wordLength: number;
   isLocked: boolean;
+  knownTiles?: string[];
 }
 
 interface RoomState {
   roomId: string;
   turn: string | null;
   mode: GameMode;
-  settings: { greyOutUsed: boolean; timerEnabled: boolean };
+  settings: { greyOutUsed: boolean; timerEnabled: boolean; showOpponentProgress?: boolean };
   turnStartTime?: number;
   state: GameState;
   me: PlayerState;
@@ -79,6 +80,12 @@ export default function App() {
   }, [myWord, notes, knownTiles, room?.roomId]);
   
   useEffect(() => {
+    if (room?.roomId) {
+      socket.emit('update_progress', { roomId: room.roomId, knownTiles });
+    }
+  }, [knownTiles, room?.roomId]);
+  
+  useEffect(() => {
     if (room?.state === 'playing' && room.settings?.timerEnabled && room.turnStartTime) {
       const interval = setInterval(() => {
         const elapsed = Math.floor((Date.now() - room.turnStartTime!) / 1000);
@@ -118,7 +125,7 @@ export default function App() {
         roomId, 
         turn: null, 
         mode: 'automated',
-        settings: { greyOutUsed: true, timerEnabled: false },
+        settings: { greyOutUsed: true, timerEnabled: false, showOpponentProgress: false },
         state: 'lobby', 
         me: { id: sessionId as string, word: null }, 
         opponent: null 
@@ -576,6 +583,21 @@ export default function App() {
                   <span className={cn("pointer-events-none inline-block h-5 w-5 transform rounded-full bg-background shadow ring-0 transition duration-200 ease-in-out", room.settings?.timerEnabled ? "translate-x-2.5" : "-translate-x-2.5")} />
                 </button>
               </div>
+              <div className="flex items-center justify-between p-4 rounded-xl border border-border bg-secondary/20 mt-4">
+                <div className="space-y-1">
+                  <p className="font-semibold text-foreground">Opponent's Progress Viewer</p>
+                  <p className="text-sm text-muted-foreground">See what your opponent has guessed about your word.</p>
+                </div>
+                <button
+                  onClick={() => socket.emit('toggle_setting', { roomId: room.roomId, key: 'showOpponentProgress' })}
+                  className={cn(
+                    "relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2",
+                    room.settings?.showOpponentProgress ? "bg-primary" : "bg-secondary"
+                  )}
+                >
+                  <span className={cn("pointer-events-none inline-block h-5 w-5 transform rounded-full bg-background shadow ring-0 transition duration-200 ease-in-out", room.settings?.showOpponentProgress ? "translate-x-2.5" : "-translate-x-2.5")} />
+                </button>
+              </div>
             </div>
           </motion.div>
         )}
@@ -754,7 +776,7 @@ export default function App() {
       </AnimatePresence>
 
       {/* Top: Opponent's word tiles */}
-      <div className="p-6 shrink-0 flex justify-center border-b border-border">
+      <div className="p-6 shrink-0 flex flex-col justify-center items-center border-b border-border">
         <div className="flex gap-1.5 flex-wrap justify-center">
           {knownTiles.map((char, i) => (
             <input
@@ -771,6 +793,19 @@ export default function App() {
             />
           ))}
         </div>
+        
+        {room.settings?.showOpponentProgress && room.opponent?.knownTiles && room.opponent.knownTiles.length > 0 && (
+          <div className="w-full flex flex-col items-center mt-4">
+            <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest mb-1.5">Opponent's Progress</span>
+            <div className="flex justify-center gap-1">
+              {room.opponent.knownTiles.map((char, i) => (
+                <div key={i} className="w-6 h-8 bg-secondary/50 border border-border/50 rounded flex items-center justify-center text-sm font-mono font-bold text-muted-foreground">
+                  {char || '?'}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Middle: Notes section */}
