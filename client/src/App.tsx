@@ -1,8 +1,8 @@
-import { useState, useEffect, useRef } from 'react';
-import { io, Socket } from 'socket.io-client';
+import { useState, useEffect } from 'react';
+import { io } from 'socket.io-client';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from './lib/utils';
-import { LogIn, KeyRound, Loader2, Check, ArrowRight, X, Trash2, Info, Play, Settings } from 'lucide-react';
+import { LogIn, KeyRound, Loader2, Check, X, Trash2, Info, Play, Settings } from 'lucide-react';
 
 let sessionId = localStorage.getItem('sessionId');
 if (!sessionId) {
@@ -96,7 +96,7 @@ export default function App() {
         mode: 'automated',
         settings: { greyOutUsed: true },
         state: 'lobby', 
-        me: { id: sessionId, word: null }, 
+        me: { id: sessionId as string, word: null }, 
         opponent: null 
       });
     });
