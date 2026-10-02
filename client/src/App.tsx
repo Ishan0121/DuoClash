@@ -2,7 +2,10 @@ import { useState, useEffect } from 'react';
 import { io } from 'socket.io-client';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from './lib/utils';
-import { LogIn, KeyRound, Loader2, Check, X, Trash2, Info, Play, Settings } from 'lucide-react';
+import { LogIn, KeyRound, Loader2, Check, X, Trash2, Info, Play, Settings, Lightbulb, NotebookPen, Send } from 'lucide-react';
+import { Toaster, toast } from 'sonner';
+import confetti from 'canvas-confetti';
+import { playClick, playSuccess, playError } from './lib/sounds';
 
 let sessionId = localStorage.getItem('sessionId');
 if (!sessionId) {
@@ -31,7 +34,8 @@ interface RoomState {
   roomId: string;
   turn: string | null;
   mode: GameMode;
-  settings: { greyOutUsed: boolean };
+  settings: { greyOutUsed: boolean; timerEnabled: boolean };
+  turnStartTime?: number;
   state: GameState;
   me: PlayerState;
   opponent: OpponentState | null;
@@ -39,7 +43,6 @@ interface RoomState {
 
 export default function App() {
   const [room, setRoom] = useState<RoomState | null>(null);
-  const [error, setError] = useState<string>('');
   const [joinCode, setJoinCode] = useState('');
   const [myWord, setMyWord] = useState('');
   
@@ -58,6 +61,8 @@ export default function App() {
       if (savedNotes) setNotes(JSON.parse(savedNotes));
       
       const savedTiles = localStorage.getItem(`knownTiles_${room.roomId}`);
+      const savedScratch = localStorage.getItem(`scratch_${room.roomId}`);
+      if (savedScratch) setScratchpadText(savedScratch);
       if (savedTiles) {
         setKnownTiles(JSON.parse(savedTiles));
       }
@@ -69,9 +74,20 @@ export default function App() {
       localStorage.setItem(`myWord_${room.roomId}`, myWord);
       localStorage.setItem(`notes_${room.roomId}`, JSON.stringify(notes));
       localStorage.setItem(`knownTiles_${room.roomId}`, JSON.stringify(knownTiles));
+      localStorage.setItem(`scratch_${room.roomId}`, scratchpadText);
     }
   }, [myWord, notes, knownTiles, room?.roomId]);
   
+  useEffect(() => {
+    if (room?.state === 'playing' && room.settings?.timerEnabled && room.turnStartTime) {
+      const interval = setInterval(() => {
+        const elapsed = Math.floor((Date.now() - room.turnStartTime!) / 1000);
+        setTimeLeft(Math.max(60 - elapsed, 0));
+      }, 1000);
+      return () => clearInterval(interval);
+    }
+  }, [room?.state, room?.settings?.timerEnabled, room?.turnStartTime]);
+
   // Call Mode states
   const [selectedLetter, setSelectedLetter] = useState('');
   const [noteNumber, setNoteNumber] = useState('');
@@ -79,6 +95,14 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [waitingForOpponent, setWaitingForOpponent] = useState(false);
   const [askedLetter, setAskedLetter] = useState('');
+  const [keyboardMode, setKeyboardMode] = useState<'action'|'notes'>('action');
+  const [showScratchpad, setShowScratchpad] = useState(false);
+  const [scratchpadText, setScratchpadText] = useState('');
+  const [showHintModal, setShowHintModal] = useState(false);
+  const [hintInput, setHintInput] = useState('');
+  const [receivedHint, setReceivedHint] = useState<string|null>(null);
+  const [timeLeft, setTimeLeft] = useState<number>(60);
+  const [shakeSolve, setShakeSolve] = useState(false);
 
   // Automated Mode verification state
   const [verifyRequest, setVerifyRequest] = useState<{ letter: string, askerId: string } | null>(null);
@@ -86,7 +110,7 @@ export default function App() {
   const [verifyPositions, setVerifyPositions] = useState<number[]>([]);
 
   // Winner state
-  const [winner, setWinner] = useState<{ winnerId: string, word: string } | null>(null);
+  const [winner, setWinner] = useState<{ winnerId: string, winnerWord: string, loserWord: string } | null>(null);
 
   useEffect(() => {
     socket.on('room_created', ({ roomId }) => {
@@ -94,7 +118,7 @@ export default function App() {
         roomId, 
         turn: null, 
         mode: 'automated',
-        settings: { greyOutUsed: true },
+        settings: { greyOutUsed: true, timerEnabled: false },
         state: 'lobby', 
         me: { id: sessionId as string, word: null }, 
         opponent: null 
@@ -118,8 +142,8 @@ export default function App() {
     });
 
     socket.on('error', (msg) => {
-      setError(msg);
-      setTimeout(() => setError(''), 3000);
+      toast.error(msg);
+      playError();
     });
 
     socket.on('verify_letter', (data) => {
@@ -132,6 +156,7 @@ export default function App() {
       setWaitingForOpponent(false);
       // We asked for a letter and got the result
       setNotes(prev => [{ char: letter, occurrences: count.toString() }, ...prev]);
+      playSuccess();
       
       // Update known tiles
       setKnownTiles(prev => {
@@ -143,18 +168,39 @@ export default function App() {
       });
     });
 
+    socket.on('receive_hint', ({ hint }) => {
+      setReceivedHint(hint);
+      playSuccess();
+      setTimeout(() => setReceivedHint(null), 4000);
+    });
+    socket.on('turn_skipped_timeout', ({ playerId }) => {
+      if (playerId === sessionId) {
+        toast.error('Time is up! You lost your turn.');
+        playError();
+      } else {
+        toast('Opponent ran out of time! Your turn.');
+      }
+    });
     socket.on('turn_skipped', ({ playerId }) => {
       if (playerId === sessionId) {
-        setError('Incorrect solve! You lose a turn.');
+        toast.error('Incorrect solve! You lose a turn.');
+        setShakeSolve(true);
+        setTimeout(() => setShakeSolve(false), 500);
+        playError();
       } else {
-        setError('Opponent guessed incorrectly! They lose a turn.');
+        toast.success('Opponent guessed incorrectly! They lose a turn.');
       }
-      setTimeout(() => setError(''), 3000);
     });
 
     socket.on('game_over', (data) => {
       setRoom(prev => prev ? { ...prev, state: 'ended' } : null);
       setWinner(data);
+      if (data.winnerId === sessionId) {
+        playSuccess();
+        confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 } });
+      } else {
+        playError();
+      }
     });
 
     socket.on('game_restarted', ({ roomId }) => {
@@ -207,10 +253,12 @@ export default function App() {
   };
   const handleStartGame = () => {
     socket.emit('start_game', { roomId: room?.roomId });
+    playClick();
   };
 
   const handleLetterTap = (letter: string) => {
     if (room?.mode === 'automated') {
+      playClick();
       setAskedLetter(letter);
       setWaitingForOpponent(true);
       socket.emit('ask_letter', { roomId: room.roomId, letter });
@@ -248,6 +296,11 @@ export default function App() {
   };
 
   const handleSolve = () => {
+    if (!isMyTurn) {
+      toast.error("You can only guess when it's your turn.");
+      playError();
+      return;
+    }
     if (solveAttempt.length === room?.opponent?.wordLength) {
       socket.emit('solve_word', { roomId: room?.roomId, word: solveAttempt });
       setSolveAttempt('');
@@ -259,12 +312,13 @@ export default function App() {
   if (!room || room.state === 'lobby') {
     return (
       <div className="min-h-[100dvh] flex flex-col items-center justify-center p-6 space-y-8 max-w-md mx-auto">
+        <Toaster position="top-center" theme="dark" />
         <div className="text-center space-y-2">
           <h1 className="text-4xl font-bold tracking-tight">Word Deduction</h1>
           <p className="text-muted-foreground">Outsmart your opponent in real-time.</p>
         </div>
 
-        {error && <div className="text-destructive font-medium">{error}</div>}
+
 
         <div className="w-full space-y-4">
           {room?.roomId ? (
@@ -323,12 +377,13 @@ export default function App() {
   if (room.state === 'locking' || room.state === 'ready') {
     return (
       <div className="min-h-[100dvh] flex flex-col items-center justify-center p-6 space-y-8 max-w-md mx-auto">
+        <Toaster position="top-center" theme="dark" />
         <div className="text-center space-y-2">
           <h2 className="text-3xl font-bold tracking-tight">Lock Your Word</h2>
           <p className="text-muted-foreground">Choose a word between 1 and 12 letters. Make it hard to guess.</p>
         </div>
 
-        {error && <div className="text-destructive font-medium">{error}</div>}
+
 
         <div className="w-full space-y-4">
           <input 
@@ -396,12 +451,15 @@ export default function App() {
   }
 
   if (room.state === 'ended') {
+    const isWinner = winner?.winnerId === sessionId;
+    const opponentWordToShow = isWinner ? winner?.loserWord : winner?.winnerWord;
+
     return (
       <div className="min-h-[100dvh] flex flex-col items-center justify-center p-6 space-y-8 max-w-md mx-auto text-center">
         <h2 className="text-5xl font-bold tracking-tighter">
-          {winner?.winnerId === sessionId ? 'You Won!' : 'You Lost!'}
+          {isWinner ? 'You Won!' : 'You Lost!'}
         </h2>
-        <p className="text-xl text-muted-foreground">The word was: <span className="font-mono font-bold text-foreground">{winner?.word}</span></p>
+        <p className="text-xl text-muted-foreground">Opponent's word was: <span className="font-mono font-bold text-foreground">{opponentWordToShow}</span></p>
         <div className="flex gap-4 w-full">
           <button onClick={() => socket.emit('leave_room', { roomId: room.roomId })} className="flex-1 py-4 rounded-xl bg-secondary text-secondary-foreground font-bold active:scale-[0.98] transition-transform">Leave Room</button>
           <button onClick={() => socket.emit('restart_game', { roomId: room.roomId })} className="flex-[2] py-4 rounded-xl bg-primary text-primary-foreground font-bold active:scale-[0.98] transition-transform">Play Again</button>
@@ -413,6 +471,7 @@ export default function App() {
   // Playing State
   return (
     <div className="h-[100dvh] flex flex-col max-w-md mx-auto relative overflow-hidden bg-background">
+      <Toaster position="top-center" theme="dark" />
       {/* Header */}
       <header className="flex flex-col gap-2 p-4 border-b border-border bg-background/80 backdrop-blur z-10 shrink-0">
         <div className="flex items-center justify-between">
@@ -425,29 +484,36 @@ export default function App() {
               <button onClick={() => setShowSettings(true)} className="p-1 rounded-full bg-secondary text-secondary-foreground hover:bg-secondary/80">
                 <Settings className="w-4 h-4" />
               </button>
+              <button onClick={() => setShowScratchpad(true)} className="p-1 rounded-full bg-secondary text-secondary-foreground hover:bg-secondary/80 ml-1">
+                <NotebookPen className="w-4 h-4" />
+              </button>
+              <button onClick={() => setShowHintModal(true)} className="p-1 rounded-full bg-secondary text-secondary-foreground hover:bg-secondary/80 ml-1">
+                <Lightbulb className="w-4 h-4" />
+              </button>
             </span>
             <span className={cn("text-xs px-2 py-0.5 rounded-full transition-colors", isMyTurn ? "bg-primary/20 text-primary font-bold animate-pulse" : "text-muted-foreground")}>
               {isMyTurn ? "Your Turn" : "Opponent's Turn"}
             </span>
           </div>
           <button 
-            onClick={() => socket.emit('change_mode', { roomId: room.roomId, mode: room.mode === 'automated' ? 'call' : 'automated' })}
+            onClick={() => setKeyboardMode(prev => prev === 'action' ? 'notes' : 'action')}
             className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-secondary/50 text-xs font-medium border border-border"
           >
-            <div className={cn("w-2 h-2 rounded-full", room.mode === 'automated' ? 'bg-emerald-500' : 'bg-amber-500')} />
-            {room.mode === 'automated' ? 'Auto Mode' : 'Call Mode'}
+            <div className={cn("w-2 h-2 rounded-full", keyboardMode === 'action' ? 'bg-emerald-500' : 'bg-amber-500')} />
+            {keyboardMode === 'action' ? 'Play/Ask' : 'Take Notes'}
           </button>
         </div>
         <div className="text-xs text-center font-medium bg-secondary/30 py-1.5 rounded-md mt-1">
           Your word: <span className="font-mono font-bold tracking-widest text-primary">{room.me.word}</span>
+          {room.settings?.timerEnabled && room.state === 'playing' && (
+            <div className="flex items-center justify-center text-xs mt-1 font-bold text-amber-500">
+              Timer: {timeLeft}s
+            </div>
+          )}
         </div>
       </header>
 
-      {error && (
-        <div className="absolute top-16 left-4 right-4 z-50 bg-destructive text-destructive-foreground p-3 rounded-lg text-sm text-center font-medium shadow-lg">
-          {error}
-        </div>
-      )}
+
 
       {/* Settings Modal */}
       <AnimatePresence>
@@ -495,6 +561,21 @@ export default function App() {
               >
                 Leave Room
               </button>
+              <div className="flex items-center justify-between p-4 rounded-xl border border-border bg-secondary/20 mt-4">
+                <div className="space-y-1">
+                  <p className="font-semibold text-foreground">Turn Timer</p>
+                  <p className="text-sm text-muted-foreground">Enable a 60-second timer per turn.</p>
+                </div>
+                <button
+                  onClick={() => socket.emit('toggle_setting', { roomId: room.roomId, key: 'timerEnabled' })}
+                  className={cn(
+                    "relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2",
+                    room.settings?.timerEnabled ? "bg-primary" : "bg-secondary"
+                  )}
+                >
+                  <span className={cn("pointer-events-none inline-block h-5 w-5 transform rounded-full bg-background shadow ring-0 transition duration-200 ease-in-out", room.settings?.timerEnabled ? "translate-x-2.5" : "-translate-x-2.5")} />
+                </button>
+              </div>
             </div>
           </motion.div>
         )}
@@ -531,6 +612,58 @@ export default function App() {
                 <p>If you guess correctly, you win! If you are wrong, you <strong className="text-destructive">skip your next turn</strong>.</p>
               </div>
             </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      
+      {/* Hint Modal */}
+      <AnimatePresence>
+        {showHintModal && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 z-[70] bg-background/95 backdrop-blur-sm flex flex-col p-6 items-center justify-center">
+            <h3 className="text-2xl font-bold mb-4">Send a Hint</h3>
+            <input 
+              value={hintInput} 
+              onChange={e => setHintInput(e.target.value)} 
+              className="w-full p-4 rounded-xl bg-secondary border border-border mb-4 text-center font-bold" 
+              placeholder="Type hint word..." 
+            />
+            <div className="flex gap-4 w-full">
+              <button onClick={() => setShowHintModal(false)} className="flex-1 py-4 bg-secondary rounded-xl font-bold">Cancel</button>
+              <button 
+                onClick={() => { socket.emit('send_hint', { roomId: room.roomId, hint: hintInput }); setShowHintModal(false); setHintInput(''); toast.success('Hint sent!'); playClick(); }} 
+                className="flex-[2] py-4 bg-primary text-primary-foreground rounded-xl font-bold flex items-center justify-center gap-2"
+              ><Send className="w-5 h-5"/> Send Hint</button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Floating Hint */}
+      <AnimatePresence>
+        {receivedHint && (
+          <motion.div initial={{ y: -50, opacity: 0, scale: 0.8 }} animate={{ y: window.innerHeight / 3, opacity: 1, scale: 1.2 }} exit={{ opacity: 0, scale: 1.5 }} transition={{ type: 'spring', damping: 15 }} className="absolute left-0 right-0 z-[80] flex justify-center pointer-events-none">
+            <div className="bg-primary text-primary-foreground px-6 py-4 rounded-3xl shadow-2xl font-bold text-3xl font-mono tracking-widest border-4 border-background">
+              {receivedHint}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Scratchpad */}
+      <AnimatePresence>
+        {showScratchpad && (
+          <motion.div initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }} className="absolute inset-0 top-24 z-[65] bg-background/95 backdrop-blur-md rounded-t-3xl border-t border-border flex flex-col p-6">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-xl font-bold flex items-center gap-2"><NotebookPen className="w-5 h-5"/> My Scratchpad</h3>
+              <button onClick={() => setShowScratchpad(false)} className="p-2 rounded-full bg-secondary"><X className="w-5 h-5"/></button>
+            </div>
+            <textarea 
+              value={scratchpadText} 
+              onChange={e => setScratchpadText(e.target.value)}
+              className="flex-1 w-full bg-secondary/30 rounded-xl border border-border p-4 resize-none focus:outline-none focus:ring-1 focus:ring-primary"
+              placeholder="Write your deductions here... (e.g. word ends in T, second letter is A or E)"
+            />
           </motion.div>
         )}
       </AnimatePresence>
@@ -678,26 +811,26 @@ export default function App() {
             value={solveAttempt}
             onChange={(e) => setSolveAttempt(e.target.value.replace(/[^A-Za-z]/g, '').toUpperCase())}
             maxLength={room.opponent?.wordLength}
-            className="flex-1 bg-secondary/50 border border-border rounded-xl px-4 py-3 text-center font-mono tracking-widest uppercase focus:outline-none focus:ring-1 focus:ring-ring"
+            className={cn("flex-1 bg-secondary/50 border border-border rounded-xl px-4 py-3 text-center font-mono tracking-widest uppercase focus:outline-none focus:ring-1 focus:ring-ring", shakeSolve && "animate-[shake_0.5s_ease-in-out]")}
           />
-          <button 
-            onClick={handleSolve}
-            disabled={!isMyTurn || solveAttempt.length !== room.opponent?.wordLength}
-            className="px-6 rounded-xl bg-primary text-primary-foreground font-bold active:scale-[0.98] transition-transform disabled:opacity-50"
-          >
+            <button 
+              onClick={handleSolve}
+              disabled={solveAttempt.length !== room.opponent?.wordLength}
+              className="px-6 rounded-xl bg-primary text-primary-foreground font-bold active:scale-[0.98] transition-transform disabled:opacity-50"
+            >
             Solve
           </button>
         </div>
 
         {/* Input Guidance */}
         <div className="text-center text-xs font-medium text-muted-foreground mb-2 mt-2">
-          {room.mode === 'automated' ? 'Use keyboard to ask opponent about a letter' : 'Use keyboard to take notes (Select Letter, then Number)'}
+          {keyboardMode === 'action' ? 'Tap letter to ask opponent' : 'Use notes keyboard to log numbers'}
         </div>
 
         {/* Input Grid / Numpad */}
         <div className="relative h-48">
           <AnimatePresence mode="wait">
-            {room.mode === 'automated' ? (
+            {keyboardMode === 'action' ? (
               <motion.div
                 key="auto"
                 initial={{ opacity: 0, scale: 0.95 }}
@@ -708,6 +841,7 @@ export default function App() {
               >
                 {'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').map(char => {
                   const isAsked = room.settings?.greyOutUsed && notes.some(n => n.char === char);
+                  const isKnown = knownTiles.includes(char);
                   return (
                     <button
                       key={char}
@@ -715,9 +849,7 @@ export default function App() {
                       onClick={() => handleLetterTap(char)}
                       className={cn(
                         "flex items-center justify-center rounded-lg border text-sm font-medium transition-colors",
-                        isAsked 
-                          ? "bg-secondary/10 border-border/20 text-muted-foreground/30 opacity-50" 
-                          : "bg-secondary/40 border-border/50 active:bg-secondary disabled:opacity-50"
+                        isKnown ? "bg-emerald-500 text-white border-emerald-600 shadow-sm" : isAsked ? "bg-secondary/10 border-border/20 text-muted-foreground/30 opacity-50" : "bg-secondary/40 border-border/50 active:bg-secondary disabled:opacity-50"
                       )}
                     >
                       {char}

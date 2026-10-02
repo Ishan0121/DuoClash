@@ -29,6 +29,37 @@ const PORT = process.env.PORT || 3001;
 // }
 const rooms = {};
 const sessions = {};
+const disconnectTimeouts = {};
+const turnTimeouts = {};
+
+function clearTurnTimer(roomId) {
+  if (turnTimeouts[roomId]) {
+    clearTimeout(turnTimeouts[roomId]);
+    delete turnTimeouts[roomId];
+  }
+}
+
+function startTurnTimer(roomId) {
+  clearTurnTimer(roomId);
+  const room = rooms[roomId];
+  if (!room || room.state !== 'playing' || !room.settings.timerEnabled) return;
+  
+  room.turnStartTime = Date.now();
+  
+  turnTimeouts[roomId] = setTimeout(() => {
+    const r = rooms[roomId];
+    if (!r || r.state !== 'playing') return;
+    
+    const currentTurn = r.turn;
+    const opponentId = Object.keys(r.players).find(id => id !== currentTurn);
+    if (!opponentId) return;
+    
+    r.turn = opponentId;
+    io.to(roomId).emit('turn_skipped_timeout', { playerId: currentTurn });
+    broadcastGameState(roomId);
+    startTurnTimer(roomId); // start timer for the next player
+  }, 60000);
+}
 
 io.use((socket, next) => {
   const sessionId = socket.handshake.auth.sessionId;
@@ -58,6 +89,11 @@ io.on('connection', (socket) => {
   socket.join(socket.sessionId);
   console.log('User connected:', socket.sessionId);
 
+  if (disconnectTimeouts[socket.sessionId]) {
+    clearTimeout(disconnectTimeouts[socket.sessionId]);
+    delete disconnectTimeouts[socket.sessionId];
+  }
+
   // Auto-reconnect if session has a room
   if (sessions[socket.sessionId] && rooms[sessions[socket.sessionId]]) {
     const roomId = sessions[socket.sessionId];
@@ -70,7 +106,7 @@ io.on('connection', (socket) => {
     rooms[roomId] = {
       roomId,
       hostId: socket.sessionId,
-      settings: { greyOutUsed: true },
+      settings: { greyOutUsed: true, timerEnabled: false },
       players: {
         [socket.sessionId]: { id: socket.sessionId, word: null }
       },
@@ -140,6 +176,7 @@ io.on('connection', (socket) => {
       room.state = 'playing';
       room.turn = playerIds[Math.floor(Math.random() * 2)];
       broadcastGameState(roomId);
+      startTurnTimer(roomId);
     }
   });
 
@@ -156,6 +193,21 @@ io.on('connection', (socket) => {
     if (room && room.settings && typeof room.settings[key] !== 'undefined') {
       room.settings[key] = !room.settings[key];
       broadcastGameState(roomId);
+      
+      // If timer is toggled while playing, restart/clear timer
+      if (key === 'timerEnabled' && room.state === 'playing') {
+        if (room.settings.timerEnabled) startTurnTimer(roomId);
+        else clearTurnTimer(roomId);
+      }
+    }
+  });
+
+  socket.on('send_hint', ({ roomId, hint }) => {
+    const room = rooms[roomId];
+    if (!room || room.state !== 'playing') return;
+    const opponentId = Object.keys(room.players).find(id => id !== socket.sessionId);
+    if (opponentId) {
+      io.to(opponentId).emit('receive_hint', { hint });
     }
   });
 
@@ -191,6 +243,7 @@ io.on('connection', (socket) => {
        // Switch turn
        room.turn = socket.sessionId;
        broadcastGameState(roomId);
+       startTurnTimer(roomId);
     } else {
        // Cheating/Mistake detected
        socket.emit('error', 'Mistake detected! Your response does not match your word. You lose your turn.');
@@ -202,6 +255,7 @@ io.on('connection', (socket) => {
        // Turn stays with the asker (opponentId), effectively skipping the cheater's turn
        room.turn = opponentId;
        broadcastGameState(roomId);
+       startTurnTimer(roomId);
     }
   });
 
@@ -216,7 +270,12 @@ io.on('connection', (socket) => {
 
     if (word.toUpperCase() === opponentWord) {
       room.state = 'ended';
-      io.to(roomId).emit('game_over', { winnerId: socket.sessionId, word: opponentWord });
+      clearTurnTimer(roomId);
+      io.to(roomId).emit('game_over', { 
+        winnerId: socket.sessionId, 
+        winnerWord: room.players[socket.sessionId].word,
+        loserWord: opponentWord 
+      });
     } else {
       // Incorrect solve, skip next turn
       // Note: Skip logic can be complex if we only have 2 players, effectively they lose a turn, 
@@ -225,6 +284,7 @@ io.on('connection', (socket) => {
       // Keep turn as opponent, they will effectively get 2 actions
       room.turn = opponentId;
       broadcastGameState(roomId);
+      startTurnTimer(roomId);
     }
   });
 
@@ -239,6 +299,7 @@ io.on('connection', (socket) => {
       const stateForPlayer = {
         roomId: room.roomId,
         turn: room.turn,
+        turnStartTime: room.turnStartTime,
         mode: room.mode,
         settings: room.settings,
         state: room.state,
@@ -281,6 +342,7 @@ io.on('connection', (socket) => {
       return;
     }
     
+    clearTurnTimer(roomId);
     delete room.players[socket.sessionId];
     delete sessions[socket.sessionId];
     socket.leave(roomId);
@@ -301,7 +363,30 @@ io.on('connection', (socket) => {
 
   socket.on('disconnect', () => {
     console.log('User disconnected:', socket.sessionId);
-    // Cleanup rooms, handle disconnect
+    
+    disconnectTimeouts[socket.sessionId] = setTimeout(() => {
+      const roomId = sessions[socket.sessionId];
+      if (roomId) {
+        const room = rooms[roomId];
+        if (room) {
+          clearTurnTimer(roomId);
+          delete room.players[socket.sessionId];
+          delete sessions[socket.sessionId];
+          
+          const remainingPlayers = Object.keys(room.players);
+          if (remainingPlayers.length === 0) {
+            delete rooms[roomId];
+          } else {
+            if (room.hostId === socket.sessionId) {
+              room.hostId = remainingPlayers[0];
+            }
+            room.state = 'lobby'; 
+            broadcastGameState(roomId);
+            io.to(roomId).emit('error', 'Opponent disconnected.');
+          }
+        }
+      }
+    }, 30000);
   });
 });
 
