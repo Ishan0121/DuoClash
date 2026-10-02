@@ -119,7 +119,15 @@ export default function App() {
   // Winner state
   const [winner, setWinner] = useState<{ winnerId: string, winnerWord: string, loserWord: string } | null>(null);
 
+  // Server connection state
+  const [isServerConnected, setIsServerConnected] = useState(socket.connected);
+
   useEffect(() => {
+    const onConnect = () => setIsServerConnected(true);
+    const onDisconnect = () => setIsServerConnected(false);
+
+    socket.on('connect', onConnect);
+    socket.on('disconnect', onDisconnect);
     socket.on('room_created', ({ roomId }) => {
       setRoom(prev => prev ? { ...prev, roomId } : { 
         roomId, 
@@ -234,6 +242,8 @@ export default function App() {
     });
 
     return () => {
+      socket.off('connect', onConnect);
+      socket.off('disconnect', onDisconnect);
       socket.off('room_created');
       socket.off('game_state_update');
       socket.off('error');
@@ -328,7 +338,15 @@ export default function App() {
 
 
         <div className="w-full space-y-4">
-          {room?.roomId ? (
+          {!isServerConnected ? (
+            <div className="flex flex-col items-center justify-center p-8 space-y-4 rounded-2xl bg-secondary/30 border border-border">
+              <Loader2 className="w-8 h-8 animate-spin text-primary" />
+              <div className="text-center space-y-1">
+                <p className="font-semibold text-foreground">Waking up server...</p>
+                <p className="text-xs text-muted-foreground">This may take up to 50 seconds if the server was asleep.</p>
+              </div>
+            </div>
+          ) : room?.roomId ? (
             <div className="p-6 rounded-xl bg-secondary/50 text-center space-y-3 border">
               <p className="text-sm text-muted-foreground uppercase tracking-wider">Room Code</p>
               <h2 className="text-5xl font-mono tracking-widest">{room.roomId}</h2>
