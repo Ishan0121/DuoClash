@@ -1,6 +1,6 @@
 import { X, Sword, Bomb, Check } from 'lucide-react';
 
-export default function GameSelection({ room, socket, sessionId }: any) {
+export default function GameSelection({ room, socket }: any) {
   const myVote = room.me.gameVote;
   const oppVote = room.opponent?.gameVote;
 

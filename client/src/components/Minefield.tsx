@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Loader2, Play, Bomb, Gem, X, Info, Settings, Lightbulb } from 'lucide-react';
+import { Play, Bomb, Gem, Lightbulb } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { Toaster, toast } from 'sonner';
 
@@ -41,7 +41,6 @@ export default function Minefield({ room, socket, sessionId }: any) {
 
   const handlePlantClick = (index: number) => {
     setLocalMines(prev => {
-      const existing = prev.find(m => m.index === index);
       let next = prev.filter(m => m.index !== index);
       if (paintMode !== 'erase') {
         const count = next.filter(m => m.type === paintMode).length;

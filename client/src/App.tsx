@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { io } from 'socket.io-client';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from './lib/utils';
-import { LogIn, KeyRound, Loader2, Check, X, Trash2, Info, Play, Settings, Lightbulb, NotebookPen, Send } from 'lucide-react';
+import { KeyRound, Loader2, Check, X, Trash2, Info, Play, Settings, Lightbulb, NotebookPen, Send } from 'lucide-react';
 import { Toaster, toast } from 'sonner';
 import confetti from 'canvas-confetti';
 import { playClick, playSuccess, playError } from './lib/sounds';
