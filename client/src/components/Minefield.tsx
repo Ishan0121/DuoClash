@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Play, Bomb, Gem, Lightbulb } from 'lucide-react';
+import { Play, Bomb, Gem, Lightbulb, Gamepad2, X } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { Toaster, toast } from 'sonner';
 
@@ -141,6 +141,21 @@ export default function Minefield({ room, socket, sessionId }: any) {
         {room.state === 'planting' && room.me.isPlanted && (
           <p className="animate-pulse text-muted-foreground">Waiting for opponent...</p>
         )}
+
+        <div className="pt-8 w-full flex gap-4">
+          <button 
+            onClick={() => socket.emit('change_game', { roomId: room.roomId })}
+            className="flex-1 flex items-center justify-center gap-2 px-6 py-4 rounded-xl bg-primary/10 text-primary font-bold hover:bg-primary/20 transition-colors active:scale-[0.98]"
+          >
+            <Gamepad2 className="w-5 h-5" /> Change Game
+          </button>
+          <button 
+            onClick={() => socket.emit('leave_room', { roomId: room.roomId })}
+            className="flex-1 flex items-center justify-center gap-2 px-6 py-4 rounded-xl bg-destructive/10 text-destructive font-bold hover:bg-destructive/20 transition-colors active:scale-[0.98]"
+          >
+            <X className="w-5 h-5" /> Leave Room
+          </button>
+        </div>
       </div>
     );
   }
@@ -158,6 +173,9 @@ export default function Minefield({ room, socket, sessionId }: any) {
               Room {room.roomId}
               <button onClick={() => setShowHintModal(true)} className="p-1 rounded-full bg-secondary">
                 <Lightbulb className="w-4 h-4" />
+              </button>
+              <button onClick={() => socket.emit('change_game', { roomId: room.roomId })} className="p-1 rounded-full bg-primary/20 text-primary hover:bg-primary/30 ml-1" title="Change Game">
+                <Gamepad2 className="w-4 h-4" />
               </button>
             </span>
             <span className={cn("text-xs px-2 py-0.5 rounded-full transition-colors", isMyTurn ? "bg-primary/20 text-primary font-bold animate-pulse" : "text-muted-foreground")}>

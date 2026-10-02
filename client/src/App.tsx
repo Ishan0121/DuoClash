@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { io } from 'socket.io-client';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from './lib/utils';
-import { KeyRound, Loader2, Check, X, Trash2, Info, Play, Settings, Lightbulb, NotebookPen, Send } from 'lucide-react';
+import { KeyRound, Loader2, Check, X, Trash2, Info, Play, Settings, Lightbulb, NotebookPen, Send, Gamepad2 } from 'lucide-react';
 import { Toaster, toast } from 'sonner';
 import confetti from 'canvas-confetti';
 import { playClick, playSuccess, playError } from './lib/sounds';
@@ -413,10 +413,16 @@ export default function App() {
           )
         )}
 
-        <div className="pt-8 w-full">
+        <div className="pt-8 w-full flex gap-4">
+          <button 
+            onClick={() => socket.emit('change_game', { roomId: room.roomId })}
+            className="flex-1 flex items-center justify-center gap-2 px-6 py-4 rounded-xl bg-primary/10 text-primary font-bold hover:bg-primary/20 transition-colors active:scale-[0.98]"
+          >
+            <Gamepad2 className="w-5 h-5" /> Change Game
+          </button>
           <button 
             onClick={() => socket.emit('leave_room', { roomId: room.roomId })}
-            className="w-full flex items-center justify-center gap-2 px-6 py-4 rounded-xl bg-destructive/10 text-destructive font-bold hover:bg-destructive/20 transition-colors active:scale-[0.98]"
+            className="flex-1 flex items-center justify-center gap-2 px-6 py-4 rounded-xl bg-destructive/10 text-destructive font-bold hover:bg-destructive/20 transition-colors active:scale-[0.98]"
           >
             <X className="w-5 h-5" /> Leave Room
           </button>
@@ -439,9 +445,12 @@ export default function App() {
           <p className="text-xl text-muted-foreground">Opponent's word was: <span className="font-mono font-bold text-foreground">{opponentWordToShow}</span></p>
         )}
         
-        <div className="flex gap-4 w-full mt-8">
-          <button onClick={() => socket.emit('leave_room', { roomId: room.roomId })} className="flex-1 py-4 rounded-xl bg-secondary text-secondary-foreground font-bold active:scale-[0.98] transition-transform">Leave Room</button>
-          <button onClick={() => socket.emit('restart_game', { roomId: room.roomId })} className="flex-[2] py-4 rounded-xl bg-primary text-primary-foreground font-bold active:scale-[0.98] transition-transform">Play Again</button>
+        <div className="flex flex-col gap-3 w-full mt-8">
+          <button onClick={() => socket.emit('restart_game', { roomId: room.roomId })} className="w-full py-4 rounded-xl bg-primary text-primary-foreground font-bold text-lg active:scale-[0.98] transition-transform shadow-lg shadow-primary/20">Play Again</button>
+          <div className="flex gap-3 w-full">
+            <button onClick={() => socket.emit('change_game', { roomId: room.roomId })} className="flex-[2] py-4 rounded-xl bg-primary/20 text-primary font-bold active:scale-[0.98] transition-transform flex items-center justify-center gap-2"><Gamepad2 className="w-5 h-5" /> Change Game</button>
+            <button onClick={() => socket.emit('leave_room', { roomId: room.roomId })} className="flex-1 py-4 rounded-xl bg-secondary text-secondary-foreground font-bold active:scale-[0.98] transition-transform">Leave Room</button>
+          </div>
         </div>
       </div>
     );
@@ -468,6 +477,9 @@ export default function App() {
               </button>
               <button onClick={() => setShowHintModal(true)} className="p-1 rounded-full bg-secondary text-secondary-foreground hover:bg-secondary/80 ml-1">
                 <Lightbulb className="w-4 h-4" />
+              </button>
+              <button onClick={() => socket.emit('change_game', { roomId: room.roomId })} className="p-1 rounded-full bg-primary/20 text-primary hover:bg-primary/30 ml-1" title="Change Game">
+                <Gamepad2 className="w-4 h-4" />
               </button>
             </span>
             <span className={cn("text-xs px-2 py-0.5 rounded-full transition-colors", isMyTurn ? "bg-primary/20 text-primary font-bold animate-pulse" : "text-muted-foreground")}>

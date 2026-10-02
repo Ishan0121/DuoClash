@@ -412,6 +412,26 @@ io.on('connection', (socket) => {
     broadcastGameState(roomId);
   });
 
+  socket.on('change_game', ({ roomId }) => {
+    const room = rooms[roomId];
+    if (!room) return;
+    
+    room.state = 'selecting_game';
+    room.gameType = null;
+    room.turn = null;
+    Object.keys(room.players).forEach(id => {
+      room.players[id].word = null;
+      room.players[id].knownTiles = [];
+      room.players[id].gameVote = null;
+      room.players[id].mines = [];
+      room.players[id].revealed = [];
+    });
+    
+    clearTurnTimer(roomId);
+    io.to(roomId).emit('game_restarted', { roomId });
+    broadcastGameState(roomId);
+  });
+
   socket.on('leave_room', ({ roomId }) => {
     const room = rooms[roomId];
     if (!room) {
