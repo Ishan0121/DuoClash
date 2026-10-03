@@ -397,7 +397,7 @@ export default function App() {
         
         {room.scores && room.opponent && (
           <div className="absolute top-6 left-6 flex items-center bg-secondary/50 border border-border/50 rounded-md px-3 py-1.5 text-xs font-mono font-bold uppercase tracking-wider shadow-inner">
-            <span className="text-emerald-400">You: {room.scores[sessionId] || 0}</span>
+            <span className="text-emerald-400">You: {room.scores[sessionId as string] || 0}</span>
             <span className="mx-2 opacity-30">|</span>
             <span className="text-amber-400">Opp: {room.scores[room.opponent.id] || 0}</span>
           </div>
@@ -535,7 +535,7 @@ export default function App() {
       <div className="min-h-[100dvh] flex flex-col items-center justify-center p-6 space-y-8 max-w-md mx-auto text-center relative">
         {room.scores && room.opponent && (
           <div className="absolute top-6 left-6 flex items-center bg-secondary/50 border border-border/50 rounded-md px-3 py-1.5 text-xs font-mono font-bold uppercase tracking-wider shadow-inner">
-            <span className="text-emerald-400">You: {room.scores[sessionId] || 0}</span>
+            <span className="text-emerald-400">You: {room.scores[sessionId as string] || 0}</span>
             <span className="mx-2 opacity-30">|</span>
             <span className="text-amber-400">Opp: {room.scores[room.opponent.id] || 0}</span>
           </div>
@@ -634,7 +634,7 @@ export default function App() {
               Room {room.roomId}
               {room.scores && room.opponent && (
                 <div className="flex items-center bg-secondary/50 border border-border/50 rounded-md px-2 py-0.5 text-[10px] font-mono font-bold uppercase tracking-wider shadow-inner ml-2">
-                  <span className="text-emerald-400">You: {room.scores[sessionId] || 0}</span>
+                  <span className="text-emerald-400">You: {room.scores[sessionId as string] || 0}</span>
                   <span className="mx-1.5 opacity-30">|</span>
                   <span className="text-amber-400">Opp: {room.scores[room.opponent.id] || 0}</span>
                 </div>

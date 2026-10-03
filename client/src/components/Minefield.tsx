@@ -92,7 +92,7 @@ export default function Minefield({ room, socket, sessionId }: any) {
   }, [room.actionLog]);
 
   useEffect(() => {
-    let interval: NodeJS.Timeout;
+    let interval: ReturnType<typeof setInterval>;
     if (room.settings?.timerEnabled && room.turnStartTime && room.state === 'playing') {
       interval = setInterval(() => {
         const elapsed = Math.floor((Date.now() - room.turnStartTime) / 1000);
