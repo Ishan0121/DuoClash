@@ -43,7 +43,7 @@ interface RoomState {
   turnStartTime?: number;
   state: GameState | 'selecting_game' | 'selecting_game_conflict' | 'planting';
   gameType?: 'word' | 'mine' | null;
-  me: PlayerState & { gameVote?: string, isPlanted?: boolean, revealed?: any[] };
+  me: PlayerState & { gameVote?: string, isPlanted?: boolean, revealed?: any[], mines?: { index: number, type: 'treasure' | 'bomb' }[] };
   opponent: OpponentState & { gameVote?: string, isPlanted?: boolean, revealed?: any[] } | null;
 }
 
@@ -124,6 +124,10 @@ export default function App() {
   // Winner state
   const [winner, setWinner] = useState<{ winnerId: string, winnerWord: string, loserWord: string } | null>(null);
 
+  // Change game confirmation state
+  const [changeGameWaiting, setChangeGameWaiting] = useState(false);
+  const [changeGameConfirm, setChangeGameConfirm] = useState(false);
+
   // Server connection state
   const [isServerConnected, setIsServerConnected] = useState(socket.connected);
 
@@ -138,7 +142,7 @@ export default function App() {
         roomId, 
         turn: null, 
         mode: 'automated',
-        settings: { greyOutUsed: true, timerEnabled: false, showOpponentProgress: false },
+        settings: { greyOutUsed: true, timerEnabled: false, showOpponentProgress: true },
         state: 'lobby', 
         me: { id: sessionId as string, word: null }, 
         opponent: null 
@@ -227,11 +231,29 @@ export default function App() {
       }
     });
 
+    socket.on('change_game_waiting', () => {
+      setChangeGameWaiting(true);
+    });
+
+    socket.on('change_game_confirm_request', () => {
+      setChangeGameConfirm(true);
+    });
+
+    socket.on('change_game_resolved', ({ accepted }: { accepted: boolean, cancelled?: boolean }) => {
+      setChangeGameWaiting(false);
+      setChangeGameConfirm(false);
+      if (!accepted) {
+        toast('Game change was declined.');
+      }
+    });
+
     socket.on('game_restarted', ({ roomId }) => {
       setMyWord('');
       setNotes([]);
       setKnownTiles([]);
       setWinner(null);
+      setChangeGameWaiting(false);
+      setChangeGameConfirm(false);
       localStorage.removeItem(`myWord_${roomId}`);
       localStorage.removeItem(`notes_${roomId}`);
       localStorage.removeItem(`knownTiles_${roomId}`);
@@ -260,6 +282,9 @@ export default function App() {
       socket.off('letter_result');
       socket.off('turn_skipped');
       socket.off('game_over');
+      socket.off('change_game_waiting');
+      socket.off('change_game_confirm_request');
+      socket.off('change_game_resolved');
       socket.off('game_restarted');
       socket.off('left_room');
     };
@@ -415,7 +440,7 @@ export default function App() {
 
         <div className="pt-8 w-full flex gap-4">
           <button 
-            onClick={() => socket.emit('change_game', { roomId: room.roomId })}
+            onClick={() => socket.emit('request_change_game', { roomId: room.roomId })}
             className="flex-1 flex items-center justify-center gap-2 px-6 py-4 rounded-xl bg-primary/10 text-primary font-bold hover:bg-primary/20 transition-colors active:scale-[0.98]"
           >
             <Gamepad2 className="w-5 h-5" /> Change Game
@@ -427,6 +452,52 @@ export default function App() {
             <X className="w-5 h-5" /> Leave Room
           </button>
         </div>
+
+        {/* Change Game Confirmation Modals */}
+        <AnimatePresence>
+          {changeGameWaiting && (
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="fixed inset-0 z-[75] bg-background/95 backdrop-blur-md flex flex-col items-center justify-center p-6 space-y-6"
+            >
+              <motion.div animate={{ rotate: 360 }} transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}>
+                <Gamepad2 className="w-12 h-12 text-primary" />
+              </motion.div>
+              <h3 className="text-2xl font-bold tracking-tight text-center">Change Game Request Sent</h3>
+              <p className="text-muted-foreground text-center text-sm">Waiting for your opponent to accept...</p>
+              <button
+                onClick={() => { socket.emit('cancel_change_game', { roomId: room.roomId }); setChangeGameWaiting(false); }}
+                className="px-8 py-3 rounded-xl bg-secondary text-secondary-foreground font-semibold active:scale-[0.98] transition-transform"
+              >Cancel</button>
+            </motion.div>
+          )}
+        </AnimatePresence>
+        <AnimatePresence>
+          {changeGameConfirm && (
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="fixed inset-0 z-[75] bg-background/95 backdrop-blur-md flex flex-col items-center justify-center p-6 space-y-6"
+            >
+              <Gamepad2 className="w-12 h-12 text-amber-400" />
+              <h3 className="text-2xl font-bold tracking-tight text-center">Change Game?</h3>
+              <p className="text-muted-foreground text-center text-sm max-w-xs">Your opponent wants to switch to a different game. The current game will be discarded. Do you agree?</p>
+              <div className="flex gap-3 w-full max-w-xs">
+                <button
+                  onClick={() => { socket.emit('respond_change_game', { roomId: room.roomId, accepted: false }); setChangeGameConfirm(false); }}
+                  className="flex-1 py-4 rounded-xl bg-secondary text-secondary-foreground font-bold active:scale-[0.98] transition-transform"
+                >Decline</button>
+                <button
+                  onClick={() => { socket.emit('respond_change_game', { roomId: room.roomId, accepted: true }); setChangeGameConfirm(false); }}
+                  className="flex-[2] py-4 rounded-xl bg-primary text-primary-foreground font-bold active:scale-[0.98] transition-transform shadow-lg shadow-primary/20"
+                >Accept</button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     );
   }
@@ -436,7 +507,7 @@ export default function App() {
     const opponentWordToShow = isWinner ? winner?.loserWord : winner?.winnerWord;
 
     return (
-      <div className="min-h-[100dvh] flex flex-col items-center justify-center p-6 space-y-8 max-w-md mx-auto text-center">
+      <div className="min-h-[100dvh] flex flex-col items-center justify-center p-6 space-y-8 max-w-md mx-auto text-center relative">
         <h2 className="text-5xl font-bold tracking-tighter">
           {isWinner ? 'You Won!' : 'You Lost!'}
         </h2>
@@ -448,10 +519,56 @@ export default function App() {
         <div className="flex flex-col gap-3 w-full mt-8">
           <button onClick={() => socket.emit('restart_game', { roomId: room.roomId })} className="w-full py-4 rounded-xl bg-primary text-primary-foreground font-bold text-lg active:scale-[0.98] transition-transform shadow-lg shadow-primary/20">Play Again</button>
           <div className="flex gap-3 w-full">
-            <button onClick={() => socket.emit('change_game', { roomId: room.roomId })} className="flex-[2] py-4 rounded-xl bg-primary/20 text-primary font-bold active:scale-[0.98] transition-transform flex items-center justify-center gap-2"><Gamepad2 className="w-5 h-5" /> Change Game</button>
+            <button onClick={() => socket.emit('request_change_game', { roomId: room.roomId })} className="flex-[2] py-4 rounded-xl bg-primary/20 text-primary font-bold active:scale-[0.98] transition-transform flex items-center justify-center gap-2"><Gamepad2 className="w-5 h-5" /> Change Game</button>
             <button onClick={() => socket.emit('leave_room', { roomId: room.roomId })} className="flex-1 py-4 rounded-xl bg-secondary text-secondary-foreground font-bold active:scale-[0.98] transition-transform">Leave Room</button>
           </div>
         </div>
+
+        {/* Change Game Confirmation Modals */}
+        <AnimatePresence>
+          {changeGameWaiting && (
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="fixed inset-0 z-[75] bg-background/95 backdrop-blur-md flex flex-col items-center justify-center p-6 space-y-6"
+            >
+              <motion.div animate={{ rotate: 360 }} transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}>
+                <Gamepad2 className="w-12 h-12 text-primary" />
+              </motion.div>
+              <h3 className="text-2xl font-bold tracking-tight text-center">Change Game Request Sent</h3>
+              <p className="text-muted-foreground text-center text-sm">Waiting for your opponent to accept...</p>
+              <button
+                onClick={() => { socket.emit('cancel_change_game', { roomId: room.roomId }); setChangeGameWaiting(false); }}
+                className="px-8 py-3 rounded-xl bg-secondary text-secondary-foreground font-semibold active:scale-[0.98] transition-transform"
+              >Cancel</button>
+            </motion.div>
+          )}
+        </AnimatePresence>
+        <AnimatePresence>
+          {changeGameConfirm && (
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="fixed inset-0 z-[75] bg-background/95 backdrop-blur-md flex flex-col items-center justify-center p-6 space-y-6"
+            >
+              <Gamepad2 className="w-12 h-12 text-amber-400" />
+              <h3 className="text-2xl font-bold tracking-tight text-center">Change Game?</h3>
+              <p className="text-muted-foreground text-center text-sm max-w-xs">Your opponent wants to switch to a different game. The current game will be discarded. Do you agree?</p>
+              <div className="flex gap-3 w-full max-w-xs">
+                <button
+                  onClick={() => { socket.emit('respond_change_game', { roomId: room.roomId, accepted: false }); setChangeGameConfirm(false); }}
+                  className="flex-1 py-4 rounded-xl bg-secondary text-secondary-foreground font-bold active:scale-[0.98] transition-transform"
+                >Decline</button>
+                <button
+                  onClick={() => { socket.emit('respond_change_game', { roomId: room.roomId, accepted: true }); setChangeGameConfirm(false); }}
+                  className="flex-[2] py-4 rounded-xl bg-primary text-primary-foreground font-bold active:scale-[0.98] transition-transform shadow-lg shadow-primary/20"
+                >Accept</button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     );
   }
@@ -478,7 +595,7 @@ export default function App() {
               <button onClick={() => setShowHintModal(true)} className="p-1 rounded-full bg-secondary text-secondary-foreground hover:bg-secondary/80 ml-1">
                 <Lightbulb className="w-4 h-4" />
               </button>
-              <button onClick={() => socket.emit('change_game', { roomId: room.roomId })} className="p-1 rounded-full bg-primary/20 text-primary hover:bg-primary/30 ml-1" title="Change Game">
+              <button onClick={() => socket.emit('request_change_game', { roomId: room.roomId })} className="p-1 rounded-full bg-primary/20 text-primary hover:bg-primary/30 ml-1" title="Change Game">
                 <Gamepad2 className="w-4 h-4" />
               </button>
             </span>
@@ -498,7 +615,7 @@ export default function App() {
           Your word: <span className="font-mono font-bold tracking-widest text-primary">{room.me.word}</span>
           {room.settings?.timerEnabled && room.state === 'playing' && (
             <div className="flex items-center justify-center text-xs mt-1 font-bold text-amber-500">
-              Timer: {timeLeft}s
+              {isMyTurn ? "Your turn: " : "Opponent: "}{timeLeft}s
             </div>
           )}
         </div>
@@ -755,6 +872,63 @@ export default function App() {
             <Loader2 className="w-10 h-10 animate-spin text-primary opacity-80" />
             <h3 className="text-xl font-bold tracking-tight text-center">Opponent is verifying...</h3>
             <p className="text-muted-foreground text-center">Waiting for them to count <strong className="text-foreground text-2xl ml-1">{askedLetter}</strong></p>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Change Game — Requester Waiting Modal */}
+      <AnimatePresence>
+        {changeGameWaiting && (
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            className="absolute inset-0 z-[75] bg-background/95 backdrop-blur-md flex flex-col items-center justify-center p-6 space-y-6"
+          >
+            <motion.div
+              animate={{ rotate: 360 }}
+              transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}
+            >
+              <Gamepad2 className="w-12 h-12 text-primary" />
+            </motion.div>
+            <h3 className="text-2xl font-bold tracking-tight text-center">Change Game Request Sent</h3>
+            <p className="text-muted-foreground text-center text-sm">Waiting for your opponent to accept...</p>
+            <button
+              onClick={() => { socket.emit('cancel_change_game', { roomId: room.roomId }); setChangeGameWaiting(false); }}
+              className="px-8 py-3 rounded-xl bg-secondary text-secondary-foreground font-semibold active:scale-[0.98] transition-transform"
+            >
+              Cancel
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Change Game — Opponent Confirmation Modal */}
+      <AnimatePresence>
+        {changeGameConfirm && (
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            className="absolute inset-0 z-[75] bg-background/95 backdrop-blur-md flex flex-col items-center justify-center p-6 space-y-6"
+          >
+            <Gamepad2 className="w-12 h-12 text-amber-400" />
+            <h3 className="text-2xl font-bold tracking-tight text-center">Change Game?</h3>
+            <p className="text-muted-foreground text-center text-sm max-w-xs">Your opponent wants to switch to a different game. The current game will be discarded. Do you agree?</p>
+            <div className="flex gap-3 w-full max-w-xs">
+              <button
+                onClick={() => { socket.emit('respond_change_game', { roomId: room.roomId, accepted: false }); setChangeGameConfirm(false); }}
+                className="flex-1 py-4 rounded-xl bg-secondary text-secondary-foreground font-bold active:scale-[0.98] transition-transform"
+              >
+                Decline
+              </button>
+              <button
+                onClick={() => { socket.emit('respond_change_game', { roomId: room.roomId, accepted: true }); setChangeGameConfirm(false); }}
+                className="flex-[2] py-4 rounded-xl bg-primary text-primary-foreground font-bold active:scale-[0.98] transition-transform shadow-lg shadow-primary/20"
+              >
+                Accept
+              </button>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>

@@ -44,8 +44,8 @@ function startTurnTimer(roomId) {
     
     r.turn = opponentId;
     io.to(roomId).emit('turn_skipped_timeout', { playerId: currentTurn });
-    broadcastGameState(roomId);
     startTurnTimer(roomId);
+    broadcastGameState(roomId);
   }, 60000);
 }
 
@@ -71,6 +71,48 @@ function validateWord(word) {
   return word && word.length >= 1 && word.length <= 12;
 }
 
+function broadcastGameState(roomId) {
+  const room = rooms[roomId];
+  if (!room) return;
+
+  const playerIds = Object.keys(room.players);
+  playerIds.forEach(id => {
+    const stateForPlayer = {
+      roomId: room.roomId,
+      turn: room.turn,
+      turnStartTime: room.turnStartTime,
+      mode: room.mode,
+      settings: room.settings,
+      state: room.state,
+      gameType: room.gameType,
+      me: { 
+        id: id, 
+        word: room.players[id].word, 
+        isHost: room.hostId === id,
+        gameVote: room.players[id].gameVote,
+        isPlanted: room.players[id].mines && room.players[id].mines.length > 0,
+        revealed: room.players[id].revealed,
+        mines: room.players[id].mines
+      },
+      opponent: null
+    };
+
+    const opponentId = playerIds.find(pId => pId !== id);
+    if (opponentId && room.players[opponentId]) {
+      stateForPlayer.opponent = {
+        id: opponentId,
+        wordLength: room.players[opponentId].word ? room.players[opponentId].word.length : 0,
+        isLocked: !!room.players[opponentId].word,
+        knownTiles: room.players[opponentId].knownTiles,
+        gameVote: room.players[opponentId].gameVote,
+        isPlanted: room.players[opponentId].mines && room.players[opponentId].mines.length > 0,
+        revealed: room.players[opponentId].revealed
+      };
+    }
+    io.to(id).emit('game_state_update', stateForPlayer);
+  });
+}
+
 io.on('connection', (socket) => {
   socket.join(socket.sessionId);
   
@@ -88,13 +130,22 @@ io.on('connection', (socket) => {
     broadcastGameState(roomId);
   }
 
+  socket.use(([event, ...args], next) => {
+    const roomId = sessions[socket.sessionId];
+    if (roomId && rooms[roomId]) {
+      rooms[roomId].lastActivity = Date.now();
+    }
+    next();
+  });
+
   socket.on('create_room', () => {
     const roomId = generateRoomCode();
     rooms[roomId] = {
       roomId,
       hostId: socket.sessionId,
+      lastActivity: Date.now(),
       settings: { 
-        greyOutUsed: true, timerEnabled: false, showOpponentProgress: false,
+        greyOutUsed: true, timerEnabled: false, showOpponentProgress: true,
         mineGridSize: 5, mineTreasureCount: 3, mineBombCount: 1 
       },
       players: {
@@ -244,8 +295,8 @@ io.on('connection', (socket) => {
     room.state = 'playing';
     const pIds = Object.keys(room.players);
     room.turn = pIds[Math.floor(Math.random() * 2)];
-    broadcastGameState(roomId);
     startTurnTimer(roomId);
+    broadcastGameState(roomId);
   });
 
   socket.on('change_mode', ({ roomId, mode }) => {
@@ -260,12 +311,13 @@ io.on('connection', (socket) => {
     const room = rooms[roomId];
     if (room && room.settings) {
       room.settings[key] = value !== undefined ? value : !room.settings[key];
-      broadcastGameState(roomId);
       
       if (key === 'timerEnabled' && room.state === 'playing') {
         if (room.settings.timerEnabled) startTurnTimer(roomId);
         else clearTurnTimer(roomId);
       }
+
+      broadcastGameState(roomId);
     }
   });
 
@@ -319,15 +371,15 @@ io.on('connection', (socket) => {
     if (count === actualPositions.length && JSON.stringify(positions.sort()) === JSON.stringify(actualPositions.sort())) {
        io.to(opponentId).emit('letter_result', { letter, count, positions });
        room.turn = socket.sessionId;
-       broadcastGameState(roomId);
        startTurnTimer(roomId);
+       broadcastGameState(roomId);
     } else {
        socket.emit('error', 'Mistake detected! Your response does not match your word. You lose your turn.');
        io.to(opponentId).emit('error', 'Opponent made a mistake verifying! They lose a turn, you go again.');
        io.to(opponentId).emit('letter_result', { letter, count: actualPositions.length, positions: actualPositions });
        room.turn = opponentId;
-       broadcastGameState(roomId);
        startTurnTimer(roomId);
+       broadcastGameState(roomId);
     }
   });
 
@@ -347,51 +399,10 @@ io.on('connection', (socket) => {
     } else {
       io.to(roomId).emit('turn_skipped', { playerId: socket.sessionId, reason: 'Incorrect solve!' });
       room.turn = opponentId;
-      broadcastGameState(roomId);
       startTurnTimer(roomId);
+      broadcastGameState(roomId);
     }
   });
-
-  function broadcastGameState(roomId) {
-    const room = rooms[roomId];
-    if (!room) return;
-
-    const playerIds = Object.keys(room.players);
-    playerIds.forEach(id => {
-      const stateForPlayer = {
-        roomId: room.roomId,
-        turn: room.turn,
-        turnStartTime: room.turnStartTime,
-        mode: room.mode,
-        settings: room.settings,
-        state: room.state,
-        gameType: room.gameType,
-        me: { 
-          id: id, 
-          word: room.players[id].word, 
-          isHost: room.hostId === id,
-          gameVote: room.players[id].gameVote,
-          isPlanted: room.players[id].mines && room.players[id].mines.length > 0,
-          revealed: room.players[id].revealed
-        },
-        opponent: null
-      };
-
-      const opponentId = playerIds.find(pId => pId !== id);
-      if (opponentId && room.players[opponentId]) {
-        stateForPlayer.opponent = {
-          id: opponentId,
-          wordLength: room.players[opponentId].word ? room.players[opponentId].word.length : 0,
-          isLocked: !!room.players[opponentId].word,
-          knownTiles: room.players[opponentId].knownTiles,
-          gameVote: room.players[opponentId].gameVote,
-          isPlanted: room.players[opponentId].mines && room.players[opponentId].mines.length > 0,
-          revealed: room.players[opponentId].revealed
-        };
-      }
-      io.to(id).emit('game_state_update', stateForPlayer);
-    });
-  }
 
   socket.on('restart_game', ({ roomId }) => {
     const room = rooms[roomId];
@@ -400,6 +411,7 @@ io.on('connection', (socket) => {
     room.state = 'selecting_game';
     room.gameType = null;
     room.turn = null;
+    room.turnStartTime = null;
     Object.keys(room.players).forEach(id => {
       room.players[id].word = null;
       room.players[id].knownTiles = [];
@@ -412,24 +424,62 @@ io.on('connection', (socket) => {
     broadcastGameState(roomId);
   });
 
-  socket.on('change_game', ({ roomId }) => {
+  socket.on('request_change_game', ({ roomId }) => {
     const room = rooms[roomId];
     if (!room) return;
+    if (room.changeGameRequest) return; // already pending
     
-    room.state = 'selecting_game';
-    room.gameType = null;
-    room.turn = null;
-    Object.keys(room.players).forEach(id => {
-      room.players[id].word = null;
-      room.players[id].knownTiles = [];
-      room.players[id].gameVote = null;
-      room.players[id].mines = [];
-      room.players[id].revealed = [];
-    });
+    room.changeGameRequest = { requesterId: socket.sessionId };
     
-    clearTurnTimer(roomId);
-    io.to(roomId).emit('game_restarted', { roomId });
-    broadcastGameState(roomId);
+    const opponentId = Object.keys(room.players).find(id => id !== socket.sessionId);
+    // Notify the requester they're waiting
+    io.to(socket.sessionId).emit('change_game_waiting');
+    // Notify the opponent to confirm
+    if (opponentId) {
+      io.to(opponentId).emit('change_game_confirm_request', { requesterId: socket.sessionId });
+    }
+  });
+
+  socket.on('respond_change_game', ({ roomId, accepted }) => {
+    const room = rooms[roomId];
+    if (!room || !room.changeGameRequest) return;
+    
+    // Only the non-requester can respond
+    if (socket.sessionId === room.changeGameRequest.requesterId) return;
+    
+    if (accepted) {
+      // Both agreed — proceed with game change
+      room.state = 'selecting_game';
+      room.gameType = null;
+      room.turn = null;
+      room.turnStartTime = null;
+      delete room.changeGameRequest;
+      Object.keys(room.players).forEach(id => {
+        room.players[id].word = null;
+        room.players[id].knownTiles = [];
+        room.players[id].gameVote = null;
+        room.players[id].mines = [];
+        room.players[id].revealed = [];
+      });
+      
+      clearTurnTimer(roomId);
+      io.to(roomId).emit('change_game_resolved', { accepted: true });
+      io.to(roomId).emit('game_restarted', { roomId });
+      broadcastGameState(roomId);
+    } else {
+      // Opponent declined
+      delete room.changeGameRequest;
+      io.to(roomId).emit('change_game_resolved', { accepted: false });
+    }
+  });
+
+  socket.on('cancel_change_game', ({ roomId }) => {
+    const room = rooms[roomId];
+    if (!room || !room.changeGameRequest) return;
+    if (socket.sessionId !== room.changeGameRequest.requesterId) return;
+    
+    delete room.changeGameRequest;
+    io.to(roomId).emit('change_game_resolved', { accepted: false, cancelled: true });
   });
 
   socket.on('leave_room', ({ roomId }) => {
@@ -487,6 +537,22 @@ io.on('connection', (socket) => {
     }, 30000);
   });
 });
+
+setInterval(() => {
+  const now = Date.now();
+  for (const roomId in rooms) {
+    const room = rooms[roomId];
+    if (room && room.lastActivity && now - room.lastActivity > 60 * 60 * 1000) { // 1 hour
+      clearTurnTimer(roomId);
+      io.to(roomId).emit('error', 'Session closed due to 1 hour of inactivity.');
+      io.to(roomId).emit('left_room', { roomId });
+      delete rooms[roomId];
+      for (const socketId in sessions) {
+        if (sessions[socketId] === roomId) delete sessions[socketId];
+      }
+    }
+  }
+}, 5 * 60 * 1000); // Check every 5 minutes
 
 server.listen(PORT, () => {
   console.log(`Server listening on port ${PORT}`);
