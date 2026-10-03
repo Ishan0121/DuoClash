@@ -123,6 +123,7 @@ export default function App() {
   const [isServerConnected, setIsServerConnected] = useState(socket.connected);
 
   useEffect(() => {
+    setIsServerConnected(socket.connected);
     const onConnect = () => setIsServerConnected(true);
     const onDisconnect = () => setIsServerConnected(false);
 
