@@ -1,6 +1,6 @@
 import { X, Sword, Bomb, Check } from 'lucide-react';
 
-export default function GameSelection({ room, socket }: any) {
+export default function GameSelection({ room, socket, sessionId }: any) {
   const myVote = room.me.gameVote;
   const oppVote = room.opponent?.gameVote;
 
@@ -9,9 +9,16 @@ export default function GameSelection({ room, socket }: any) {
   };
 
   return (
-    <div className="min-h-[100dvh] flex flex-col items-center justify-center p-6 space-y-8 max-w-md mx-auto">
+    <div className="min-h-[100dvh] flex flex-col items-center justify-center p-6 space-y-8 max-w-md mx-auto relative">
+      {room.scores && room.opponent && (
+        <div className="absolute top-6 left-6 flex items-center bg-secondary/50 border border-border/50 rounded-md px-3 py-1.5 text-xs font-mono font-bold uppercase tracking-wider shadow-inner">
+          <span className="text-emerald-400">You: {room.scores[sessionId] || 0}</span>
+          <span className="mx-2 opacity-30">|</span>
+          <span className="text-amber-400">Opp: {room.scores[room.opponent.id] || 0}</span>
+        </div>
+      )}
       <div className="text-center space-y-2">
-        <h2 className="text-3xl font-bold tracking-tight">Choose Your Duel</h2>
+        <h2 className="text-3xl font-bold tracking-tight mt-10">Choose Your Duel</h2>
         <p className="text-muted-foreground">Both players must select the same game to start.</p>
       </div>
 

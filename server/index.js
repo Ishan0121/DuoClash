@@ -79,6 +79,7 @@ function broadcastGameState(roomId) {
   playerIds.forEach(id => {
     const stateForPlayer = {
       roomId: room.roomId,
+      scores: room.scores,
       turn: room.turn,
       turnStartTime: room.turnStartTime,
       mode: room.mode,
@@ -94,7 +95,8 @@ function broadcastGameState(roomId) {
         revealed: room.players[id].revealed,
         mines: room.players[id].mines
       },
-      opponent: null
+      opponent: null,
+      actionLog: room.actionLog
     };
 
     const opponentId = playerIds.find(pId => pId !== id);
@@ -144,6 +146,7 @@ io.on('connection', (socket) => {
       roomId,
       hostId: socket.sessionId,
       lastActivity: Date.now(),
+      scores: { [socket.sessionId]: 0 },
       settings: { 
         greyOutUsed: true, timerEnabled: false, showOpponentProgress: true,
         mineGridSize: 5, mineTreasureCount: 3, mineBombCount: 1 
@@ -154,7 +157,8 @@ io.on('connection', (socket) => {
       turn: null,
       mode: 'automated',
       state: 'lobby',
-      gameType: null // 'word' or 'mine'
+      gameType: null, // 'word' or 'mine'
+      actionLog: []
     };
     sessions[socket.sessionId] = roomId;
     socket.join(roomId);
@@ -167,6 +171,7 @@ io.on('connection', (socket) => {
       const playerIds = Object.keys(room.players);
       if (playerIds.length < 2) {
         room.players[socket.sessionId] = { id: socket.sessionId, word: null, knownTiles: [], gameVote: null, mines: [], revealed: [] };
+        room.scores[socket.sessionId] = 0;
         sessions[socket.sessionId] = roomId;
         socket.join(roomId);
         room.state = 'selecting_game';
@@ -262,12 +267,17 @@ io.on('connection', (socket) => {
     
     myRevealed.push({ index, type });
     room.players[socket.sessionId].revealed = myRevealed;
+
+    const row = Math.floor(index / room.settings.mineGridSize);
+    const col = index % room.settings.mineGridSize;
     
     // Check win condition
     const totalOpponentTreasures = opponentMines.filter(m => m.type === 'treasure').length;
     const myFoundTreasures = myRevealed.filter(r => r.type === 'treasure').length;
     
     if (myFoundTreasures === totalOpponentTreasures) {
+      room.scores[socket.sessionId] = (room.scores[socket.sessionId] || 0) + 1;
+      room.actionLog.push({ text: `Player ${socket.sessionId.substring(0,4)} found the last treasure and won!`, timestamp: Date.now() });
       room.state = 'ended';
       clearTurnTimer(roomId);
       io.to(roomId).emit('game_over', {
@@ -276,11 +286,13 @@ io.on('connection', (socket) => {
       });
     } else if (type === 'bomb') {
       // Hit a bomb -> penalty! (lose turn)
+      room.actionLog.push({ text: `Player ${socket.sessionId.substring(0,4)} hit a bomb at (${row}, ${col})!`, timestamp: Date.now() });
       io.to(roomId).emit('turn_skipped', { playerId: socket.sessionId, reason: 'Hit a bomb!' });
       room.turn = opponentId; // skip their turn
       startTurnTimer(roomId);
     } else {
       // Normal turn switch
+      room.actionLog.push({ text: `Player ${socket.sessionId.substring(0,4)} opened (${row}, ${col}) and found ${type}.`, timestamp: Date.now() });
       room.turn = opponentId;
       startTurnTimer(roomId);
     }
@@ -331,12 +343,16 @@ io.on('connection', (socket) => {
   });
 
   // New visual hint logic for Mine game
-  socket.on('visual_hint', ({ roomId, index, color }) => {
+  socket.on('visual_hint', ({ roomId, index, type }) => {
     const room = rooms[roomId];
     if (!room || room.state !== 'playing' || room.gameType !== 'mine') return;
     const opponentId = Object.keys(room.players).find(id => id !== socket.sessionId);
     if (opponentId) {
-      io.to(opponentId).emit('receive_visual_hint', { index, color }); // color = 'green' or 'red'
+      const row = Math.floor(index / room.settings.mineGridSize);
+      const col = index % room.settings.mineGridSize;
+      room.actionLog.push({ text: `Player ${socket.sessionId.substring(0,4)} hinted a ${type} at (${row}, ${col}).`, timestamp: Date.now() });
+      io.to(opponentId).emit('receive_visual_hint', { index, type }); // type = 'treasure' or 'bomb'
+      broadcastGameState(roomId);
     }
   });
 
@@ -389,6 +405,7 @@ io.on('connection', (socket) => {
     const opponentId = Object.keys(room.players).find(id => id !== socket.sessionId);
     
     if (word.toUpperCase() === room.players[opponentId].word) {
+      room.scores[socket.sessionId] = (room.scores[socket.sessionId] || 0) + 1;
       room.state = 'ended';
       clearTurnTimer(roomId);
       io.to(roomId).emit('game_over', { 
@@ -412,6 +429,7 @@ io.on('connection', (socket) => {
     room.gameType = null;
     room.turn = null;
     room.turnStartTime = null;
+    room.actionLog = [];
     Object.keys(room.players).forEach(id => {
       room.players[id].word = null;
       room.players[id].knownTiles = [];
@@ -453,6 +471,7 @@ io.on('connection', (socket) => {
       room.gameType = null;
       room.turn = null;
       room.turnStartTime = null;
+      room.actionLog = [];
       delete room.changeGameRequest;
       Object.keys(room.players).forEach(id => {
         room.players[id].word = null;
