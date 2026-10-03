@@ -1,8 +1,38 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Play, Bomb, Gem, Lightbulb, Gamepad2, X } from 'lucide-react';
+import { Play, Bomb, Gem, Lightbulb, Gamepad2, X, History, Clock, Info } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { Toaster, toast } from 'sonner';
+
+const playSound = (type: 'treasure' | 'bomb') => {
+  try {
+    const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    
+    if (type === 'treasure') {
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(440, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.1);
+      gain.gain.setValueAtTime(0.5, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
+      osc.start(ctx.currentTime);
+      osc.stop(ctx.currentTime + 0.3);
+    } else if (type === 'bomb') {
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(100, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(10, ctx.currentTime + 0.5);
+      gain.gain.setValueAtTime(1, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.5);
+      osc.start(ctx.currentTime);
+      osc.stop(ctx.currentTime + 0.5);
+    }
+  } catch (e) {
+    console.error(e);
+  }
+};
 
 export default function Minefield({ room, socket, sessionId }: any) {
   const gridSize = room.settings?.mineGridSize || 5;
@@ -12,25 +42,77 @@ export default function Minefield({ room, socket, sessionId }: any) {
   const [localMines, setLocalMines] = useState<{ index: number, type: 'treasure' | 'bomb' }[]>([]);
   const [paintMode, setPaintMode] = useState<'treasure' | 'bomb' | 'erase'>('treasure');
   const [showHintModal, setShowHintModal] = useState(false);
+  const [showRules, setShowRules] = useState(false);
   const [hintInput, setHintInput] = useState('');
   const [receivedHint, setReceivedHint] = useState<string | null>(null);
 
   // visual hint tracking
-  const [visualHints, setVisualHints] = useState<{ index: number, color: string }[]>([]);
+  const [visualHints, setVisualHints] = useState<{ index: number, type: 'treasure'|'bomb' }[]>([]);
 
   const [viewingOwnField, setViewingOwnField] = useState(false);
-  const [hintColor, setHintColor] = useState<'green' | 'red'>('green');
+  const [hintType, setHintType] = useState<'treasure' | 'bomb'>('treasure');
 
   // Change game confirmation state
   const [changeGameWaiting, setChangeGameWaiting] = useState(false);
   const [changeGameConfirm, setChangeGameConfirm] = useState(false);
 
+  // New Features State
+  const [timeLeft, setTimeLeft] = useState<number | null>(null);
+  const [showLog, setShowLog] = useState(false);
+  const [justGotTurn, setJustGotTurn] = useState(false);
+  const logEndRef = useRef<HTMLDivElement>(null);
+  const lastLogLen = useRef(room.actionLog?.length || 0);
+
+  const isMyTurn = room.turn === sessionId;
+
   useEffect(() => {
-    const handleVisualHint = ({ index, color }: any) => {
-      setVisualHints(prev => [...prev.filter(h => h.index !== index), { index, color }]);
+    if (isMyTurn && room.state === 'playing') {
+      setJustGotTurn(true);
+      playSound('treasure'); // Play a nice sound to grab attention
+      const t = setTimeout(() => setJustGotTurn(false), 2000);
+      return () => clearTimeout(t);
+    } else {
+      setJustGotTurn(false);
+    }
+  }, [isMyTurn, room.state]);
+
+  useEffect(() => {
+    if (showLog && logEndRef.current) {
+      logEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [room.actionLog, showLog]);
+
+  useEffect(() => {
+    if (room.actionLog && room.actionLog.length > lastLogLen.current) {
+      const latest = room.actionLog[room.actionLog.length - 1];
+      if (latest.text.includes('found treasure')) playSound('treasure');
+      else if (latest.text.includes('hit a bomb')) playSound('bomb');
+      lastLogLen.current = room.actionLog.length;
+    }
+  }, [room.actionLog]);
+
+  useEffect(() => {
+    let interval: ReturnType<typeof setInterval>;
+    if (room.settings?.timerEnabled && room.turnStartTime && room.state === 'playing') {
+      interval = setInterval(() => {
+        const elapsed = Math.floor((Date.now() - room.turnStartTime) / 1000);
+        setTimeLeft(Math.max(60 - elapsed, 0));
+      }, 1000);
+    } else {
+      setTimeLeft(null);
+    }
+    return () => clearInterval(interval);
+  }, [room.turnStartTime, room.settings?.timerEnabled, room.state]);
+
+  useEffect(() => {
+    const handleVisualHint = ({ index, type }: any) => {
+      setVisualHints(prev => [...prev.filter(h => h.index !== index), { index, type }]);
+      const row = Math.floor(index / gridSize);
+      const col = index % gridSize;
+      toast(`Opponent hinted a ${type} at (${row}, ${col})!`, { icon: type === 'treasure' ? '💎' : '💣' });
       setTimeout(() => {
-        setVisualHints(prev => prev.filter(h => h.index !== index || h.color !== color));
-      }, 3000);
+        setVisualHints(prev => prev.filter(h => h.index !== index || h.type !== type));
+      }, 5000);
     };
     const handleHint = ({ hint }: any) => {
       setReceivedHint(hint);
@@ -83,8 +165,8 @@ export default function Minefield({ room, socket, sessionId }: any) {
 
   const handleBlockClick = (index: number) => {
     if (viewingOwnField) {
-      socket.emit('visual_hint', { roomId: room.roomId, index, color: hintColor });
-      toast.success('Visual hint sent!');
+      socket.emit('visual_hint', { roomId: room.roomId, index, type: hintType });
+      toast.success('Hint sent to opponent!');
       return;
     }
     if (room.turn !== sessionId) {
@@ -188,51 +270,73 @@ export default function Minefield({ room, socket, sessionId }: any) {
   }
 
   // PLAYING STATE
-  const isMyTurn = room.turn === sessionId;
   
   return (
-    <div className="h-[100dvh] flex flex-col max-w-md mx-auto relative overflow-hidden bg-background">
+    <div className={cn("h-[100dvh] flex flex-col max-w-md mx-auto relative overflow-hidden bg-background transition-colors duration-700", isMyTurn ? "shadow-[inset_0_0_100px_rgba(16,185,129,0.1)]" : "")}>
       <Toaster position="top-center" theme="dark" />
       <header className="flex flex-col gap-2 p-4 border-b border-border bg-background/80 backdrop-blur z-10 shrink-0">
         <div className="flex items-center justify-between">
           <div className="flex flex-col">
             <span className="text-sm font-semibold tracking-wide flex items-center gap-2">
               Room {room.roomId}
-              <button onClick={() => setShowHintModal(true)} className="p-1 rounded-full bg-secondary">
+              {room.scores && room.opponent && (
+                <div className="flex items-center bg-secondary/50 border border-border/50 rounded-md px-2 py-0.5 text-[10px] font-mono font-bold uppercase tracking-wider shadow-inner ml-1">
+                  <span className="text-emerald-400">You: {room.scores[sessionId] || 0}</span>
+                  <span className="mx-1.5 opacity-30">|</span>
+                  <span className="text-amber-400">Opp: {room.scores[room.opponent.id] || 0}</span>
+                </div>
+              )}
+              <div className={cn("ml-2 px-2 py-0.5 rounded-md text-[10px] font-bold tracking-widest uppercase transition-colors shadow-sm", isMyTurn ? "bg-emerald-500 text-white" : "bg-secondary text-muted-foreground")}>
+                {isMyTurn ? "Your Turn" : "Opponent"}
+              </div>
+              {room.settings?.timerEnabled && timeLeft !== null && (
+                <div className={cn("ml-1 px-2 py-0.5 rounded-md text-[10px] font-mono font-bold flex items-center gap-1", isMyTurn ? "bg-amber-500/20 text-amber-500" : "bg-secondary text-muted-foreground")}>
+                  <Clock className="w-3 h-3" /> {timeLeft}s
+                </div>
+              )}
+              <button onClick={() => setShowRules(true)} className="p-1 rounded-full bg-secondary hover:bg-secondary/80 ml-1">
+                <Info className="w-4 h-4" />
+              </button>
+              <button onClick={() => setShowHintModal(true)} className="p-1 rounded-full bg-secondary hover:bg-secondary/80 ml-1">
                 <Lightbulb className="w-4 h-4" />
               </button>
               <button onClick={() => socket.emit('request_change_game', { roomId: room.roomId })} className="p-1 rounded-full bg-primary/20 text-primary hover:bg-primary/30 ml-1" title="Change Game">
                 <Gamepad2 className="w-4 h-4" />
               </button>
             </span>
-            <span className={cn("text-xs px-2 py-0.5 rounded-full transition-colors", isMyTurn ? "bg-primary/20 text-primary font-bold animate-pulse" : "text-muted-foreground")}>
-              {isMyTurn ? "Your Turn" : "Opponent's Turn"}
-            </span>
           </div>
         </div>
       </header>
 
+
       <div className="flex-1 flex flex-col items-center justify-center p-6 gap-8 overflow-y-auto">
         <div className="flex gap-4">
-          <button onClick={() => setViewingOwnField(false)} className={cn("px-4 py-2 rounded-xl font-bold", !viewingOwnField ? "bg-primary text-white" : "bg-secondary")}>Opponent's Field</button>
-          <button onClick={() => setViewingOwnField(true)} className={cn("px-4 py-2 rounded-xl font-bold", viewingOwnField ? "bg-primary text-white" : "bg-secondary")}>My Field</button>
+          <button onClick={() => setViewingOwnField(false)} className={cn("px-4 py-2 rounded-xl font-bold", !viewingOwnField ? "bg-primary text-primary-foreground" : "bg-secondary text-secondary-foreground")}>Opponent's Field</button>
+          <button onClick={() => setViewingOwnField(true)} className={cn("px-4 py-2 rounded-xl font-bold", viewingOwnField ? "bg-primary text-primary-foreground" : "bg-secondary text-secondary-foreground")}>My Field</button>
         </div>
 
         <div className="text-center">
           <h3 className="font-bold text-xl mb-2">{viewingOwnField ? "My Field (Hint Mode)" : "Opponent's Field"}</h3>
           {viewingOwnField ? (
             <div className="flex items-center justify-center gap-4 text-sm mt-2">
-              <span className="font-semibold text-muted-foreground">Hint Color:</span>
-              <button onClick={() => setHintColor('green')} className={cn("px-3 py-1 rounded-lg font-bold border-2", hintColor === 'green' ? "bg-emerald-500 text-white border-emerald-500" : "border-emerald-500 text-emerald-500 hover:bg-emerald-500/20")}>Green</button>
-              <button onClick={() => setHintColor('red')} className={cn("px-3 py-1 rounded-lg font-bold border-2", hintColor === 'red' ? "bg-destructive text-white border-destructive" : "border-destructive text-destructive hover:bg-destructive/20")}>Red</button>
+              <span className="font-semibold text-muted-foreground">Hint Type:</span>
+              <button onClick={() => setHintType('treasure')} className={cn("px-3 py-1 rounded-lg font-bold border-2 flex items-center gap-1", hintType === 'treasure' ? "bg-emerald-500 text-white border-emerald-500" : "border-emerald-500 text-emerald-500 hover:bg-emerald-500/20")}><Gem className="w-4 h-4"/> Treasure</button>
+              <button onClick={() => setHintType('bomb')} className={cn("px-3 py-1 rounded-lg font-bold border-2 flex items-center gap-1", hintType === 'bomb' ? "bg-destructive text-white border-destructive" : "border-destructive text-destructive hover:bg-destructive/20")}><Bomb className="w-4 h-4"/> Bomb</button>
             </div>
           ) : (
             <p className="text-sm text-muted-foreground">Find {reqTreasures} treasures to win.</p>
           )}
         </div>
 
+        <div className="flex w-full gap-2 px-2 max-w-sm">
+          <button onClick={() => setShowLog(true)} className="flex-1 py-2 bg-secondary rounded-xl font-bold flex items-center justify-center gap-2 text-sm hover:bg-secondary/80"><History className="w-4 h-4"/> Log</button>
+        </div>
+
         <div 
-          className="grid gap-2 p-4 bg-secondary/30 rounded-2xl border border-border relative" 
+          className={cn(
+            "grid gap-2 p-4 bg-secondary/30 rounded-2xl border-2 relative transition-colors duration-500",
+            isMyTurn ? "border-emerald-500/50 shadow-[0_0_30px_rgba(16,185,129,0.15)]" : "border-border"
+          )}
           style={{ gridTemplateColumns: `repeat(${gridSize}, minmax(0, 1fr))` }}
         >
           {Array.from({ length: gridSize * gridSize }).map((_, i) => {
@@ -276,10 +380,18 @@ export default function Minefield({ room, socket, sessionId }: any) {
                   'bg-background border-border hover:bg-secondary'
                 )}
               >
-                {revealed?.type === 'treasure' && <Gem className="w-6 h-6 text-emerald-500" />}
-                {revealed?.type === 'bomb' && <Bomb className="w-6 h-6 text-destructive" />}
+                {revealed?.type === 'treasure' && (
+                  <motion.div initial={{ scale: 0, rotate: -180 }} animate={{ scale: 1, rotate: 0 }} transition={{ type: 'spring' }}>
+                    <Gem className="w-6 h-6 text-emerald-500" />
+                  </motion.div>
+                )}
+                {revealed?.type === 'bomb' && (
+                  <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: 'spring' }}>
+                    <Bomb className="w-6 h-6 text-destructive" />
+                  </motion.div>
+                )}
                 {vHint && !revealed && (
-                  <span className={cn("absolute inset-0 opacity-50 animate-pulse", vHint.color === 'green' ? 'bg-emerald-500' : 'bg-destructive')} />
+                  <span className={cn("absolute inset-0 opacity-50 animate-pulse flex items-center justify-center", vHint.type === 'treasure' ? 'bg-emerald-500' : 'bg-destructive')} />
                 )}
               </button>
             )
@@ -316,10 +428,88 @@ export default function Minefield({ room, socket, sessionId }: any) {
       </AnimatePresence>
 
       <AnimatePresence>
+        {justGotTurn && (
+          <motion.div 
+            initial={{ scale: 0.8, opacity: 0, y: -20 }} 
+            animate={{ scale: 1, opacity: 1, y: 0 }} 
+            exit={{ scale: 1.1, opacity: 0 }} 
+            transition={{ type: 'spring', damping: 15, stiffness: 150 }} 
+            className="absolute left-0 right-0 top-20 pointer-events-none flex justify-center z-[100]"
+          >
+            <div className="bg-emerald-500 text-white px-8 py-3 rounded-full shadow-[0_10px_30px_rgba(16,185,129,0.5)] font-black text-2xl tracking-tight uppercase border-2 border-emerald-300">
+              Your Turn!
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
         {receivedHint && (
           <motion.div initial={{ y: -50, opacity: 0, scale: 0.8 }} animate={{ y: window.innerHeight / 3, opacity: 1, scale: 1.2 }} exit={{ opacity: 0, scale: 1.5 }} transition={{ type: 'spring', damping: 15 }} className="absolute left-0 right-0 z-[80] flex justify-center pointer-events-none">
             <div className="bg-primary text-primary-foreground px-6 py-4 rounded-3xl shadow-2xl font-bold text-3xl font-mono tracking-widest border-4 border-background">
               {receivedHint}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showLog && (
+          <motion.div initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }} transition={{ type: 'spring', bounce: 0, duration: 0.4 }} className="absolute bottom-0 left-0 right-0 h-2/3 bg-background border-t border-border z-50 p-6 flex flex-col rounded-t-3xl shadow-[0_-10px_40px_rgba(0,0,0,0.2)]">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="font-bold text-xl flex items-center gap-2"><History className="w-6 h-6"/> Action Log</h3>
+              <button onClick={() => setShowLog(false)} className="p-2 bg-secondary rounded-full hover:bg-secondary/80"><X className="w-5 h-5"/></button>
+            </div>
+            <div className="flex-1 overflow-y-auto space-y-3 pb-8">
+              {room.actionLog?.map((log: any, i: number) => (
+                <div key={i} className="bg-secondary/50 p-3 rounded-xl border border-border flex items-start gap-3">
+                  <span className="text-muted-foreground text-xs whitespace-nowrap mt-1 font-mono">{new Date(log.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit'})}</span>
+                  <p className="text-sm font-medium">{log.text}</p>
+                </div>
+              ))}
+              {(!room.actionLog || room.actionLog.length === 0) && <p className="text-muted-foreground text-center py-8">No actions yet.</p>}
+              <div ref={logEndRef} />
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Rules Modal */}
+      <AnimatePresence>
+        {showRules && (
+          <motion.div 
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 20 }}
+            className="absolute inset-0 z-[60] bg-background/95 backdrop-blur-sm flex flex-col p-6 overflow-y-auto"
+          >
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-2xl font-bold tracking-tight">How to Play</h3>
+              <button onClick={() => setShowRules(false)} className="p-2 rounded-full bg-secondary text-secondary-foreground hover:bg-secondary/80">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <div className="space-y-4 text-sm leading-relaxed text-muted-foreground pb-8">
+              <p><strong className="text-foreground">Goal:</strong> Find all {room.settings?.mineTreasureCount || 3} of your opponent's treasures before they find yours!</p>
+              
+              <div className="space-y-2">
+                <h4 className="font-semibold text-foreground text-base">Setup</h4>
+                <p>Hide your treasures and bombs on your grid. Your opponent won't know where they are.</p>
+              </div>
+
+              <div className="space-y-2">
+                <h4 className="font-semibold text-foreground text-base">Gameplay</h4>
+                <p>On your turn, click a tile on the <strong className="text-foreground">Opponent's Field</strong> to reveal it.</p>
+                <p><strong className="text-emerald-400">Treasure:</strong> You found one! Keep looking for the rest to win.</p>
+                <p><strong className="text-destructive">Bomb:</strong> Oh no! You lose your next turn.</p>
+                <p><strong className="text-amber-400">Empty:</strong> Nothing here. Your turn ends.</p>
+              </div>
+
+              <div className="space-y-2">
+                <h4 className="font-semibold text-foreground text-base">Hints</h4>
+                <p>Click the <strong className="text-foreground">Lightbulb</strong> icon to send a hint to your opponent. You can mark a tile on your own field and tell them if it's a Treasure or a Bomb!</p>
+              </div>
             </div>
           </motion.div>
         )}

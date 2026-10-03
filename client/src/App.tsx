@@ -37,6 +37,7 @@ interface OpponentState {
 
 interface RoomState {
   roomId: string;
+  scores?: { [id: string]: number };
   turn: string | null;
   mode: GameMode;
   settings: { greyOutUsed: boolean; timerEnabled: boolean; showOpponentProgress?: boolean, mineGridSize?: number, mineTreasureCount?: number, mineBombCount?: number };
@@ -127,6 +128,9 @@ export default function App() {
   // Change game confirmation state
   const [changeGameWaiting, setChangeGameWaiting] = useState(false);
   const [changeGameConfirm, setChangeGameConfirm] = useState(false);
+
+  // Turn visibility state
+  const [justGotTurn, setJustGotTurn] = useState(false);
 
   // Server connection state
   const [isServerConnected, setIsServerConnected] = useState(socket.connected);
@@ -361,6 +365,17 @@ export default function App() {
 
   const isMyTurn = room?.turn === sessionId;
 
+  useEffect(() => {
+    if (isMyTurn && room?.state === 'playing') {
+      setJustGotTurn(true);
+      playSuccess(); // Play a nice sound to grab attention
+      const t = setTimeout(() => setJustGotTurn(false), 2000);
+      return () => clearTimeout(t);
+    } else {
+      setJustGotTurn(false);
+    }
+  }, [isMyTurn, room?.state]);
+
   if (!room || room.state === 'lobby') {
     return <Lobby isServerConnected={isServerConnected} room={room} joinCode={joinCode} setJoinCode={setJoinCode} handleCreateRoom={handleCreateRoom} handleJoinRoom={handleJoinRoom} socket={socket} />;
   }
@@ -377,9 +392,18 @@ export default function App() {
 
   if (room.state === 'locking' || room.state === 'ready') {
     return (
-      <div className="min-h-[100dvh] flex flex-col items-center justify-center p-6 space-y-8 max-w-md mx-auto">
+      <div className="min-h-[100dvh] flex flex-col items-center justify-center p-6 space-y-8 max-w-md mx-auto relative">
         <Toaster position="top-center" theme="dark" />
-        <div className="text-center space-y-2">
+        
+        {room.scores && room.opponent && (
+          <div className="absolute top-6 left-6 flex items-center bg-secondary/50 border border-border/50 rounded-md px-3 py-1.5 text-xs font-mono font-bold uppercase tracking-wider shadow-inner">
+            <span className="text-emerald-400">You: {room.scores[sessionId as string] || 0}</span>
+            <span className="mx-2 opacity-30">|</span>
+            <span className="text-amber-400">Opp: {room.scores[room.opponent.id] || 0}</span>
+          </div>
+        )}
+
+        <div className="text-center space-y-2 mt-8">
           <h2 className="text-3xl font-bold tracking-tight">Lock Your Word</h2>
           <p className="text-muted-foreground">Choose a word between 1 and 12 letters. Make it hard to guess.</p>
         </div>
@@ -509,7 +533,14 @@ export default function App() {
 
     return (
       <div className="min-h-[100dvh] flex flex-col items-center justify-center p-6 space-y-8 max-w-md mx-auto text-center relative">
-        <h2 className="text-5xl font-bold tracking-tighter">
+        {room.scores && room.opponent && (
+          <div className="absolute top-6 left-6 flex items-center bg-secondary/50 border border-border/50 rounded-md px-3 py-1.5 text-xs font-mono font-bold uppercase tracking-wider shadow-inner">
+            <span className="text-emerald-400">You: {room.scores[sessionId as string] || 0}</span>
+            <span className="mx-2 opacity-30">|</span>
+            <span className="text-amber-400">Opp: {room.scores[room.opponent.id] || 0}</span>
+          </div>
+        )}
+        <h2 className="text-5xl font-bold tracking-tighter mt-8">
           {isWinner ? 'You Won!' : 'You Lost!'}
         </h2>
         
@@ -576,41 +607,52 @@ export default function App() {
 
   // Playing State
   return (
-    <div className="h-[100dvh] flex flex-col max-w-md mx-auto relative overflow-hidden bg-background">
+    <div className={cn("h-[100dvh] flex flex-col max-w-md mx-auto relative overflow-hidden bg-background transition-all duration-700 border-x-2", isMyTurn ? "shadow-[inset_0_0_100px_rgba(16,185,129,0.15)] border-emerald-500/30" : "border-transparent")}>
       <Toaster position="top-center" theme="dark" />
+      
+      {/* Turn Popup */}
+      <AnimatePresence>
+        {justGotTurn && (
+          <motion.div 
+            initial={{ scale: 0.8, opacity: 0, y: -20 }} 
+            animate={{ scale: 1, opacity: 1, y: 0 }} 
+            exit={{ scale: 1.1, opacity: 0 }} 
+            transition={{ type: 'spring', damping: 15, stiffness: 150 }} 
+            className="absolute left-0 right-0 top-24 pointer-events-none flex justify-center z-[100]"
+          >
+            <div className="bg-emerald-500 text-white px-8 py-3 rounded-full shadow-[0_10px_30px_rgba(16,185,129,0.5)] font-black text-2xl tracking-tight uppercase border-2 border-emerald-300">
+              Your Turn!
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
       {/* Header */}
       <header className="flex flex-col gap-2 p-4 border-b border-border bg-background/80 backdrop-blur z-10 shrink-0">
         <div className="flex items-center justify-between">
           <div className="flex flex-col">
             <span className="text-sm font-semibold tracking-wide flex items-center gap-2">
               Room {room.roomId}
-              <button onClick={() => setShowRules(true)} className="p-1 rounded-full bg-secondary text-secondary-foreground hover:bg-secondary/80">
-                <Info className="w-4 h-4" />
-              </button>
-              <button onClick={() => setShowSettings(true)} className="p-1 rounded-full bg-secondary text-secondary-foreground hover:bg-secondary/80">
-                <Settings className="w-4 h-4" />
-              </button>
-              <button onClick={() => setShowScratchpad(true)} className="p-1 rounded-full bg-secondary text-secondary-foreground hover:bg-secondary/80 ml-1">
-                <NotebookPen className="w-4 h-4" />
-              </button>
-              <button onClick={() => setShowHintModal(true)} className="p-1 rounded-full bg-secondary text-secondary-foreground hover:bg-secondary/80 ml-1">
-                <Lightbulb className="w-4 h-4" />
-              </button>
-              <button onClick={() => socket.emit('request_change_game', { roomId: room.roomId })} className="p-1 rounded-full bg-primary/20 text-primary hover:bg-primary/30 ml-1" title="Change Game">
-                <Gamepad2 className="w-4 h-4" />
-              </button>
-            </span>
-            <span className={cn("text-xs px-2 py-0.5 rounded-full transition-colors", isMyTurn ? "bg-primary/20 text-primary font-bold animate-pulse" : "text-muted-foreground")}>
-              {isMyTurn ? "Your Turn" : "Opponent's Turn"}
+              {room.scores && room.opponent && (
+                <div className="flex items-center bg-secondary/50 border border-border/50 rounded-md px-2 py-0.5 text-[10px] font-mono font-bold uppercase tracking-wider shadow-inner ml-2">
+                  <span className="text-emerald-400">You: {room.scores[sessionId as string] || 0}</span>
+                  <span className="mx-1.5 opacity-30">|</span>
+                  <span className="text-amber-400">Opp: {room.scores[room.opponent.id] || 0}</span>
+                </div>
+              )}
+              <div className={cn("ml-2 px-2 py-0.5 rounded-md text-[10px] font-bold tracking-widest uppercase transition-colors shadow-sm", isMyTurn ? "bg-emerald-500 text-white" : "bg-secondary text-muted-foreground")}>
+                {isMyTurn ? "Your Turn" : "Opponent"}
+              </div>
+              <div className="flex ml-2 border border-border/50 rounded-full bg-secondary/30 p-0.5 shadow-sm">
+                <button onClick={() => setShowScratchpad(true)} className="p-1.5 rounded-full text-secondary-foreground hover:bg-secondary hover:text-primary transition-colors">
+                  <NotebookPen className="w-4 h-4" />
+                </button>
+                <button onClick={() => setShowSettings(true)} className="p-1.5 rounded-full text-secondary-foreground hover:bg-secondary hover:text-primary transition-colors">
+                  <Settings className="w-4 h-4" />
+                </button>
+              </div>
             </span>
           </div>
-          <button 
-            onClick={() => setKeyboardMode(prev => prev === 'action' ? 'notes' : 'action')}
-            className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-secondary/50 text-xs font-medium border border-border"
-          >
-            <div className={cn("w-2 h-2 rounded-full", keyboardMode === 'action' ? 'bg-emerald-500' : 'bg-amber-500')} />
-            {keyboardMode === 'action' ? 'Play/Ask' : 'Take Notes'}
-          </button>
+
         </div>
         <div className="text-xs text-center font-medium bg-secondary/30 py-1.5 rounded-md mt-1">
           Your word: <span className="font-mono font-bold tracking-widest text-primary">{room.me.word}</span>
@@ -641,6 +683,18 @@ export default function App() {
             </div>
             
             <div className="space-y-6 pb-8">
+              <div className="grid grid-cols-2 gap-3 mb-2">
+                <button onClick={() => { setShowSettings(false); setShowRules(true); }} className="p-3 flex items-center justify-center gap-2 rounded-xl bg-secondary/40 hover:bg-secondary border border-border/50 text-sm font-bold transition-colors">
+                  <Info className="w-4 h-4" /> How to Play
+                </button>
+                <button onClick={() => { setShowSettings(false); setShowHintModal(true); }} className="p-3 flex items-center justify-center gap-2 rounded-xl bg-secondary/40 hover:bg-secondary border border-border/50 text-sm font-bold transition-colors">
+                  <Lightbulb className="w-4 h-4" /> Send Hint
+                </button>
+                <button onClick={() => { setShowSettings(false); socket.emit('request_change_game', { roomId: room.roomId }); }} className="p-3 flex items-center justify-center gap-2 rounded-xl bg-primary/10 text-primary hover:bg-primary/20 border border-primary/20 text-sm font-bold transition-colors col-span-2">
+                  <Gamepad2 className="w-4 h-4" /> Request Game Change
+                </button>
+              </div>
+
               <div className="flex items-center justify-between p-4 rounded-xl border border-border bg-secondary/20">
                 <div className="space-y-1">
                   <p className="font-semibold text-foreground">Grey out used letters</p>
@@ -725,9 +779,10 @@ export default function App() {
               <p><strong className="text-foreground">Goal:</strong> Guess your opponent's exact word before they guess yours.</p>
               
               <div className="space-y-2">
-                <h4 className="font-semibold text-foreground text-base">Modes</h4>
-                <p><strong className="text-emerald-400">Auto Mode:</strong> The server acts as referee. Tap a letter to ask if it's in their word. Your opponent must answer truthfully, verified by the server.</p>
-                <p><strong className="text-amber-400">Call Mode:</strong> Play over voice chat! The server stops validating. Ask questions verbally, and use the split keyboard to log notes (Select a Letter, then tap a Number to save).</p>
+                <h4 className="font-semibold text-foreground text-base">How to Play</h4>
+                <p>During your turn, use the <strong className="text-emerald-400">Play / Ask</strong> keyboard to tap a letter. The server will automatically tell you if that letter is in the opponent's word, and if so, exactly how many times it occurs!</p>
+                <p>If the letter is in their word, it will light up Green. If not, it will be dim.</p>
+                <p>Switch to the <strong className="text-amber-400">Take Notes</strong> keyboard anytime to log your own deductions. Tap a letter, then tap a number to record how many times you think it appears.</p>
               </div>
 
               <div className="space-y-2">
@@ -996,7 +1051,7 @@ export default function App() {
       </div>
 
       {/* Bottom: Drawer Input */}
-      <div className="shrink-0 border-t border-border bg-background p-4 pt-2">
+      <div className={cn("shrink-0 border-t-2 bg-background p-4 pt-2 transition-all duration-700 relative z-20", isMyTurn ? "border-emerald-500 shadow-[0_-15px_40px_rgba(16,185,129,0.15)] bg-emerald-500/5" : "border-border")}>
         {/* Solve Section */}
         <div className="flex gap-2 mb-4">
           <input 
@@ -1016,9 +1071,31 @@ export default function App() {
           </button>
         </div>
 
-        {/* Input Guidance */}
-        <div className="text-center text-xs font-medium text-muted-foreground mb-2 mt-2">
-          {keyboardMode === 'action' ? 'Tap letter to ask opponent' : 'Use notes keyboard to log numbers'}
+        {/* Toggle & Guidance */}
+        <div className="flex flex-col items-center gap-2 mb-3 mt-1">
+          <div className="relative flex items-center bg-secondary/30 p-1 rounded-full border border-border/50">
+            <div 
+              className={cn(
+                "absolute h-7 w-[100px] rounded-full transition-transform duration-300 ease-out shadow-sm", 
+                keyboardMode === 'action' ? "bg-emerald-500/20 translate-x-0" : "bg-amber-500/20 translate-x-full"
+              )} 
+            />
+            <button 
+              onClick={() => setKeyboardMode('action')}
+              className={cn("w-[100px] h-7 text-xs font-bold rounded-full z-10 transition-colors", keyboardMode === 'action' ? "text-emerald-500" : "text-muted-foreground hover:text-foreground")}
+            >
+              Play / Ask
+            </button>
+            <button 
+              onClick={() => setKeyboardMode('notes')}
+              className={cn("w-[100px] h-7 text-xs font-bold rounded-full z-10 transition-colors", keyboardMode === 'notes' ? "text-amber-500" : "text-muted-foreground hover:text-foreground")}
+            >
+              Take Notes
+            </button>
+          </div>
+          <div className="text-[10px] uppercase font-bold tracking-widest text-muted-foreground/70">
+            {keyboardMode === 'action' ? 'Tap letter to ask opponent' : 'Use notes keyboard to log numbers'}
+          </div>
         </div>
 
         {/* Input Grid / Numpad */}
