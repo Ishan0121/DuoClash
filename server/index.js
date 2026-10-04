@@ -98,7 +98,8 @@ function broadcastGameState(roomId) {
       opponent: null,
       actionLog: room.actionLog,
       dotsLines: room.dotsLines,
-      dotsBoxes: room.dotsBoxes
+      dotsBoxes: room.dotsBoxes,
+      tictactoeBoard: room.tictactoeBoard
     };
 
     const opponentId = playerIds.find(pId => pId !== id);
@@ -203,6 +204,9 @@ io.on('connection', (socket) => {
           if (v1 === 'dots') {
             room.dotsLines = [];
             room.dotsBoxes = {};
+          }
+          if (v1 === 'tictactoe') {
+            room.tictactoeBoard = Array(9).fill(null);
           }
         } else {
           room.state = 'selecting_game_conflict';
@@ -386,6 +390,55 @@ io.on('connection', (socket) => {
     broadcastGameState(roomId);
   });
 
+  // TIC-TAC-TOE
+  socket.on('tictactoe_move', ({ roomId, index }) => {
+    const room = rooms[roomId];
+    if (!room || room.state !== 'playing' || room.turn !== socket.sessionId || room.gameType !== 'tictactoe') return;
+    
+    if (room.tictactoeBoard[index] !== null) return;
+    
+    room.tictactoeBoard[index] = socket.sessionId;
+    room.actionLog.push({ playerId: socket.sessionId, text: `placed a mark.`, timestamp: Date.now() });
+    
+    const winPatterns = [
+      [0,1,2],[3,4,5],[6,7,8],
+      [0,3,6],[1,4,7],[2,5,8],
+      [0,4,8],[2,4,6]
+    ];
+    
+    let isWin = false;
+    for (const pattern of winPatterns) {
+      const [a, b, c] = pattern;
+      if (room.tictactoeBoard[a] === socket.sessionId && room.tictactoeBoard[b] === socket.sessionId && room.tictactoeBoard[c] === socket.sessionId) {
+        isWin = true;
+        break;
+      }
+    }
+    
+    if (isWin) {
+      room.scores[socket.sessionId] = (room.scores[socket.sessionId] || 0) + 1;
+      room.state = 'ended';
+      clearTurnTimer(roomId);
+      io.to(roomId).emit('game_over', {
+        winnerId: socket.sessionId,
+        reason: 'tictactoe_win'
+      });
+    } else if (room.tictactoeBoard.every(cell => cell !== null)) {
+      room.state = 'ended';
+      clearTurnTimer(roomId);
+      io.to(roomId).emit('game_over', {
+        winnerId: 'draw',
+        reason: 'tictactoe_draw'
+      });
+    } else {
+      const opponentId = Object.keys(room.players).find(id => id !== socket.sessionId);
+      room.turn = opponentId;
+      startTurnTimer(roomId);
+    }
+    
+    broadcastGameState(roomId);
+  });
+
   // GENERAL
   socket.on('start_game', ({ roomId }) => {
     const room = rooms[roomId];
@@ -512,17 +565,26 @@ io.on('connection', (socket) => {
     const room = rooms[roomId];
     if (!room || room.state !== 'ended') return;
     
-    room.state = 'selecting_game';
-    room.gameType = null;
+    if (room.gameType === 'word') {
+      room.state = 'locking';
+    } else if (room.gameType === 'mine') {
+      room.state = 'planting';
+    } else {
+      room.state = 'ready';
+    }
+    
     room.dotsLines = [];
     room.dotsBoxes = {};
+    if (room.gameType === 'tictactoe') {
+      room.tictactoeBoard = Array(9).fill(null);
+    }
+    
     room.turn = null;
     room.turnStartTime = null;
     room.actionLog = [];
     Object.keys(room.players).forEach(id => {
       room.players[id].word = null;
       room.players[id].knownTiles = [];
-      room.players[id].gameVote = null;
       room.players[id].mines = [];
       room.players[id].revealed = [];
     });
