@@ -283,7 +283,7 @@ io.on('connection', (socket) => {
     
     if (myFoundTreasures === totalOpponentTreasures) {
       room.scores[socket.sessionId] = (room.scores[socket.sessionId] || 0) + 1;
-      room.actionLog.push({ text: `Player ${socket.sessionId.substring(0,4)} found the last treasure and won!`, timestamp: Date.now() });
+      room.actionLog.push({ playerId: socket.sessionId, text: `found the last treasure and won!`, timestamp: Date.now() });
       room.state = 'ended';
       clearTurnTimer(roomId);
       io.to(roomId).emit('game_over', {
@@ -292,13 +292,13 @@ io.on('connection', (socket) => {
       });
     } else if (type === 'bomb') {
       // Hit a bomb -> penalty! (lose turn)
-      room.actionLog.push({ text: `Player ${socket.sessionId.substring(0,4)} hit a bomb at (${row}, ${col})!`, timestamp: Date.now() });
+      room.actionLog.push({ playerId: socket.sessionId, text: `hit a bomb at (${row}, ${col})!`, timestamp: Date.now() });
       io.to(roomId).emit('turn_skipped', { playerId: socket.sessionId, reason: 'Hit a bomb!' });
       room.turn = opponentId; // skip their turn
       startTurnTimer(roomId);
     } else {
       // Normal turn switch
-      room.actionLog.push({ text: `Player ${socket.sessionId.substring(0,4)} opened (${row}, ${col}) and found ${type}.`, timestamp: Date.now() });
+      room.actionLog.push({ playerId: socket.sessionId, text: `opened (${row}, ${col}) and found ${type}.`, timestamp: Date.now() });
       room.turn = opponentId;
       startTurnTimer(roomId);
     }
@@ -346,7 +346,7 @@ io.on('connection', (socket) => {
     }
     
     if (boxesCompleted > 0) {
-      room.actionLog.push({ text: `Player ${socket.sessionId.substring(0,4)} completed a box!`, timestamp: Date.now() });
+      room.actionLog.push({ playerId: socket.sessionId, text: `completed a box!`, timestamp: Date.now() });
       startTurnTimer(roomId);
       
       const totalBoxes = room.settings.dotsGridSize * room.settings.dotsGridSize;
@@ -377,7 +377,7 @@ io.on('connection', (socket) => {
         });
       }
     } else {
-      room.actionLog.push({ text: `Player ${socket.sessionId.substring(0,4)} drew a line.`, timestamp: Date.now() });
+      room.actionLog.push({ playerId: socket.sessionId, text: `drew a line.`, timestamp: Date.now() });
       const opponentId = Object.keys(room.players).find(id => id !== socket.sessionId);
       room.turn = opponentId;
       startTurnTimer(roomId);
@@ -437,7 +437,7 @@ io.on('connection', (socket) => {
     if (opponentId) {
       const row = Math.floor(index / room.settings.mineGridSize);
       const col = index % room.settings.mineGridSize;
-      room.actionLog.push({ text: `Player ${socket.sessionId.substring(0,4)} hinted a ${type} at (${row}, ${col}).`, timestamp: Date.now() });
+      room.actionLog.push({ playerId: socket.sessionId, text: `hinted a ${type} at (${row}, ${col}).`, timestamp: Date.now() });
       io.to(opponentId).emit('receive_visual_hint', { index, type }); // type = 'treasure' or 'bomb'
       broadcastGameState(roomId);
     }

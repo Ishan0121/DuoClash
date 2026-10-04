@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Play, Bomb, Gem, Lightbulb, Gamepad2, X, History, Clock, Info } from 'lucide-react';
+import { Play, Bomb, Gem, Lightbulb, Gamepad2, X, History, Clock, Info, Settings } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { Toaster, toast } from 'sonner';
 
@@ -11,7 +11,7 @@ const playSound = (type: 'treasure' | 'bomb') => {
     const gain = ctx.createGain();
     osc.connect(gain);
     gain.connect(ctx.destination);
-    
+
     if (type === 'treasure') {
       osc.type = 'sine';
       osc.frequency.setValueAtTime(440, ctx.currentTime);
@@ -47,7 +47,7 @@ export default function Minefield({ room, socket, sessionId }: any) {
   const [receivedHint, setReceivedHint] = useState<string | null>(null);
 
   // visual hint tracking
-  const [visualHints, setVisualHints] = useState<{ index: number, type: 'treasure'|'bomb' }[]>([]);
+  const [visualHints, setVisualHints] = useState<{ index: number, type: 'treasure' | 'bomb' }[]>([]);
 
   const [viewingOwnField, setViewingOwnField] = useState(false);
   const [hintType, setHintType] = useState<'treasure' | 'bomb'>('treasure');
@@ -59,6 +59,7 @@ export default function Minefield({ room, socket, sessionId }: any) {
   // New Features State
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
   const [showLog, setShowLog] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const [justGotTurn, setJustGotTurn] = useState(false);
   const logEndRef = useRef<HTMLDivElement>(null);
   const lastLogLen = useRef(room.actionLog?.length || 0);
@@ -197,8 +198,8 @@ export default function Minefield({ room, socket, sessionId }: any) {
           </button>
         </div>
 
-        <div 
-          className="grid gap-2 p-4 bg-secondary/30 rounded-2xl border border-border" 
+        <div
+          className="grid gap-2 p-4 bg-secondary/30 rounded-2xl border border-border"
           style={{ gridTemplateColumns: `repeat(${gridSize}, minmax(0, 1fr))` }}
         >
           {Array.from({ length: gridSize * gridSize }).map((_, i) => {
@@ -211,8 +212,8 @@ export default function Minefield({ room, socket, sessionId }: any) {
                 className={cn(
                   "w-12 h-12 sm:w-14 sm:h-14 rounded-xl border flex items-center justify-center transition-all",
                   m?.type === 'treasure' ? 'bg-emerald-500/20 border-emerald-500' :
-                  m?.type === 'bomb' ? 'bg-destructive/20 border-destructive' :
-                  'bg-background border-border hover:bg-secondary'
+                    m?.type === 'bomb' ? 'bg-destructive/20 border-destructive' :
+                      'bg-background border-border hover:bg-secondary'
                 )}
               >
                 {m?.type === 'treasure' && <Gem className="w-6 h-6 text-emerald-500" />}
@@ -223,15 +224,15 @@ export default function Minefield({ room, socket, sessionId }: any) {
         </div>
 
         {!room.me.isPlanted ? (
-          <button 
+          <button
             onClick={handleConfirmPlant}
-            disabled={localMines.filter(m=>m.type==='treasure').length !== reqTreasures || localMines.filter(m=>m.type==='bomb').length !== reqBombs}
+            disabled={localMines.filter(m => m.type === 'treasure').length !== reqTreasures || localMines.filter(m => m.type === 'bomb').length !== reqBombs}
             className="w-full py-4 rounded-xl bg-primary text-primary-foreground font-semibold text-lg flex items-center justify-center gap-2 disabled:opacity-50"
           >
             Confirm Placement
           </button>
         ) : (
-          <button 
+          <button
             onClick={() => socket.emit('replant_mines', { roomId: room.roomId })}
             className="w-full py-4 rounded-xl bg-secondary text-secondary-foreground font-semibold text-lg"
           >
@@ -252,13 +253,13 @@ export default function Minefield({ room, socket, sessionId }: any) {
         )}
 
         <div className="pt-8 w-full flex gap-4">
-          <button 
+          <button
             onClick={() => socket.emit('request_change_game', { roomId: room.roomId })}
             className="flex-1 flex items-center justify-center gap-2 px-6 py-4 rounded-xl bg-primary/10 text-primary font-bold hover:bg-primary/20 transition-colors active:scale-[0.98]"
           >
             <Gamepad2 className="w-5 h-5" /> Change Game
           </button>
-          <button 
+          <button
             onClick={() => socket.emit('leave_room', { roomId: room.roomId })}
             className="flex-1 flex items-center justify-center gap-2 px-6 py-4 rounded-xl bg-destructive/10 text-destructive font-bold hover:bg-destructive/20 transition-colors active:scale-[0.98]"
           >
@@ -270,7 +271,7 @@ export default function Minefield({ room, socket, sessionId }: any) {
   }
 
   // PLAYING STATE
-  
+
   return (
     <div className={cn("h-[100dvh] flex flex-col max-w-md mx-auto relative overflow-hidden bg-background transition-colors duration-700", isMyTurn ? "shadow-[inset_0_0_100px_rgba(16,185,129,0.1)]" : "")}>
       <Toaster position="top-center" theme="dark" />
@@ -294,15 +295,11 @@ export default function Minefield({ room, socket, sessionId }: any) {
                   <Clock className="w-3 h-3" /> {timeLeft}s
                 </div>
               )}
-              <button onClick={() => setShowRules(true)} className="p-1 rounded-full bg-secondary hover:bg-secondary/80 ml-1">
-                <Info className="w-4 h-4" />
-              </button>
-              <button onClick={() => setShowHintModal(true)} className="p-1 rounded-full bg-secondary hover:bg-secondary/80 ml-1">
-                <Lightbulb className="w-4 h-4" />
-              </button>
-              <button onClick={() => socket.emit('request_change_game', { roomId: room.roomId })} className="p-1 rounded-full bg-primary/20 text-primary hover:bg-primary/30 ml-1" title="Change Game">
-                <Gamepad2 className="w-4 h-4" />
-              </button>
+              <div className="flex ml-2 border border-border/50 rounded-full bg-secondary/30 p-0.5 shadow-sm">
+                <button onClick={() => setShowSettings(true)} className="p-1.5 rounded-full text-secondary-foreground hover:bg-secondary hover:text-primary transition-colors">
+                  <Settings className="w-4 h-4" />
+                </button>
+              </div>
             </span>
           </div>
         </div>
@@ -320,8 +317,8 @@ export default function Minefield({ room, socket, sessionId }: any) {
           {viewingOwnField ? (
             <div className="flex items-center justify-center gap-4 text-sm mt-2">
               <span className="font-semibold text-muted-foreground">Hint Type:</span>
-              <button onClick={() => setHintType('treasure')} className={cn("px-3 py-1 rounded-lg font-bold border-2 flex items-center gap-1", hintType === 'treasure' ? "bg-emerald-500 text-white border-emerald-500" : "border-emerald-500 text-emerald-500 hover:bg-emerald-500/20")}><Gem className="w-4 h-4"/> Treasure</button>
-              <button onClick={() => setHintType('bomb')} className={cn("px-3 py-1 rounded-lg font-bold border-2 flex items-center gap-1", hintType === 'bomb' ? "bg-destructive text-white border-destructive" : "border-destructive text-destructive hover:bg-destructive/20")}><Bomb className="w-4 h-4"/> Bomb</button>
+              <button onClick={() => setHintType('treasure')} className={cn("px-3 py-1 rounded-lg font-bold border-2 flex items-center gap-1", hintType === 'treasure' ? "bg-emerald-500 text-white border-emerald-500" : "border-emerald-500 text-emerald-500 hover:bg-emerald-500/20")}><Gem className="w-4 h-4" /> Treasure</button>
+              <button onClick={() => setHintType('bomb')} className={cn("px-3 py-1 rounded-lg font-bold border-2 flex items-center gap-1", hintType === 'bomb' ? "bg-destructive text-white border-destructive" : "border-destructive text-destructive hover:bg-destructive/20")}><Bomb className="w-4 h-4" /> Bomb</button>
             </div>
           ) : (
             <p className="text-sm text-muted-foreground">Find {reqTreasures} treasures to win.</p>
@@ -329,10 +326,10 @@ export default function Minefield({ room, socket, sessionId }: any) {
         </div>
 
         <div className="flex w-full gap-2 px-2 max-w-sm">
-          <button onClick={() => setShowLog(true)} className="flex-1 py-2 bg-secondary rounded-xl font-bold flex items-center justify-center gap-2 text-sm hover:bg-secondary/80"><History className="w-4 h-4"/> Log</button>
+          <button onClick={() => setShowLog(true)} className="flex-1 py-2 bg-secondary rounded-xl font-bold flex items-center justify-center gap-2 text-sm hover:bg-secondary/80"><History className="w-4 h-4" /> Log</button>
         </div>
 
-        <div 
+        <div
           className={cn(
             "grid gap-2 p-4 bg-secondary/30 rounded-2xl border-2 relative transition-colors duration-500",
             isMyTurn ? "border-emerald-500/50 shadow-[0_0_30px_rgba(16,185,129,0.15)]" : "border-border"
@@ -350,11 +347,11 @@ export default function Minefield({ room, socket, sessionId }: any) {
                   className={cn(
                     "w-12 h-12 sm:w-14 sm:h-14 rounded-xl border flex items-center justify-center transition-all relative overflow-hidden hover:opacity-80",
                     revealedByOpponent?.type === 'treasure' ? 'bg-emerald-500/20 border-emerald-500' :
-                    revealedByOpponent?.type === 'bomb' ? 'bg-destructive/20 border-destructive' :
-                    revealedByOpponent?.type === 'empty' ? 'bg-secondary/50 border-secondary' :
-                    myMine?.type === 'treasure' ? 'border-emerald-500 border-dashed' :
-                    myMine?.type === 'bomb' ? 'border-destructive border-dashed' :
-                    'bg-background border-border hover:bg-secondary'
+                      revealedByOpponent?.type === 'bomb' ? 'bg-destructive/20 border-destructive' :
+                        revealedByOpponent?.type === 'empty' ? 'bg-secondary/50 border-secondary' :
+                          myMine?.type === 'treasure' ? 'border-emerald-500 border-dashed' :
+                            myMine?.type === 'bomb' ? 'border-destructive border-dashed' :
+                              'bg-background border-border hover:bg-secondary'
                   )}
                 >
                   {myMine?.type === 'treasure' && <Gem className={cn("w-6 h-6 text-emerald-500", revealedByOpponent ? "" : "opacity-30")} />}
@@ -366,7 +363,7 @@ export default function Minefield({ room, socket, sessionId }: any) {
 
             const revealed = room.me.revealed?.find((r: any) => r.index === i);
             const vHint = visualHints.find(h => h.index === i);
-            
+
             return (
               <button
                 key={`opp-${i}`}
@@ -375,9 +372,9 @@ export default function Minefield({ room, socket, sessionId }: any) {
                 className={cn(
                   "w-12 h-12 sm:w-14 sm:h-14 rounded-xl border flex items-center justify-center transition-all relative overflow-hidden",
                   revealed?.type === 'treasure' ? 'bg-emerald-500/20 border-emerald-500' :
-                  revealed?.type === 'bomb' ? 'bg-destructive/20 border-destructive' :
-                  revealed?.type === 'empty' ? 'bg-secondary/50 border-secondary' :
-                  'bg-background border-border hover:bg-secondary'
+                    revealed?.type === 'bomb' ? 'bg-destructive/20 border-destructive' :
+                      revealed?.type === 'empty' ? 'bg-secondary/50 border-secondary' :
+                        'bg-background border-border hover:bg-secondary'
                 )}
               >
                 {revealed?.type === 'treasure' && (
@@ -400,26 +397,84 @@ export default function Minefield({ room, socket, sessionId }: any) {
 
         <div className="w-full flex justify-around">
           <div className="text-center">
-            <p className="text-2xl font-bold text-emerald-500">{room.me.revealed?.filter((r:any) => r.type === 'treasure').length || 0} / {reqTreasures}</p>
+            <p className="text-2xl font-bold text-emerald-500">{room.me.revealed?.filter((r: any) => r.type === 'treasure').length || 0} / {reqTreasures}</p>
             <p className="text-xs text-muted-foreground">Found</p>
           </div>
         </div>
       </div>
 
+      {/* Settings Modal */}
+      <AnimatePresence>
+        {showSettings && (
+          <motion.div 
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 20 }}
+            className="absolute inset-0 z-[60] bg-background/95 backdrop-blur-sm flex flex-col p-6 overflow-y-auto"
+          >
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-2xl font-bold tracking-tight">Game Settings</h3>
+              <button onClick={() => setShowSettings(false)} className="p-2 rounded-full bg-secondary text-secondary-foreground hover:bg-secondary/80">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <div className="space-y-6 pb-8">
+              <div className="grid grid-cols-2 gap-3 mb-2">
+                <button onClick={() => { setShowSettings(false); setShowRules(true); }} className="p-3 flex items-center justify-center gap-2 rounded-xl bg-secondary/40 hover:bg-secondary border border-border/50 text-sm font-bold transition-colors">
+                  <Info className="w-4 h-4" /> How to Play
+                </button>
+                <button onClick={() => { setShowSettings(false); setShowHintModal(true); }} className="p-3 flex items-center justify-center gap-2 rounded-xl bg-secondary/40 hover:bg-secondary border border-border/50 text-sm font-bold transition-colors">
+                  <Lightbulb className="w-4 h-4" /> Send Hint
+                </button>
+                <button onClick={() => { setShowSettings(false); socket.emit('request_change_game', { roomId: room.roomId }); }} className="p-3 flex items-center justify-center gap-2 rounded-xl bg-primary/10 text-primary hover:bg-primary/20 border border-primary/20 text-sm font-bold transition-colors col-span-2">
+                  <Gamepad2 className="w-4 h-4" /> Request Game Change
+                </button>
+              </div>
+
+              <button 
+                onClick={() => {
+                  socket.emit('leave_room', { roomId: room.roomId });
+                  setShowSettings(false);
+                }}
+                className="w-full py-3 rounded-xl bg-destructive/10 text-destructive font-bold flex items-center justify-center gap-2 active:scale-[0.98] transition-transform"
+              >
+                Leave Room
+              </button>
+              <div className="flex items-center justify-between p-4 rounded-xl border border-border bg-secondary/20 mt-4">
+                <div className="space-y-1">
+                  <p className="font-semibold text-foreground">Turn Timer</p>
+                  <p className="text-sm text-muted-foreground">Enable a 60-second timer per turn.</p>
+                </div>
+                <button
+                  onClick={() => socket.emit('toggle_setting', { roomId: room.roomId, key: 'timerEnabled' })}
+                  className={cn(
+                    "relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2",
+                    room.settings?.timerEnabled ? "bg-primary" : "bg-secondary"
+                  )}
+                >
+                  <span className={cn("pointer-events-none inline-block h-5 w-5 transform rounded-full bg-background shadow ring-0 transition duration-200 ease-in-out", room.settings?.timerEnabled ? "translate-x-2.5" : "-translate-x-2.5")} />
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <AnimatePresence>
         {showHintModal && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 z-[70] bg-background/95 backdrop-blur-sm flex flex-col p-6 items-center justify-center">
             <h3 className="text-2xl font-bold mb-4">Send a Text Hint</h3>
-            <input 
-              value={hintInput} 
-              onChange={e => setHintInput(e.target.value)} 
-              className="w-full p-4 rounded-xl bg-secondary border border-border mb-4 text-center font-bold" 
-              placeholder="Type hint..." 
+            <input
+              value={hintInput}
+              onChange={e => setHintInput(e.target.value)}
+              className="w-full p-4 rounded-xl bg-secondary border border-border mb-4 text-center font-bold"
+              placeholder="Type hint..."
             />
             <div className="flex gap-4 w-full">
               <button onClick={() => setShowHintModal(false)} className="flex-1 py-4 bg-secondary rounded-xl font-bold">Cancel</button>
-              <button 
-                onClick={() => { socket.emit('send_hint', { roomId: room.roomId, hint: hintInput }); setShowHintModal(false); setHintInput(''); toast.success('Hint sent!'); }} 
+              <button
+                onClick={() => { socket.emit('send_hint', { roomId: room.roomId, hint: hintInput }); setShowHintModal(false); setHintInput(''); toast.success('Hint sent!'); }}
                 className="flex-[2] py-4 bg-primary text-primary-foreground rounded-xl font-bold flex items-center justify-center gap-2"
               >Send Hint</button>
             </div>
@@ -429,11 +484,11 @@ export default function Minefield({ room, socket, sessionId }: any) {
 
       <AnimatePresence>
         {justGotTurn && (
-          <motion.div 
-            initial={{ scale: 0.8, opacity: 0, y: -20 }} 
-            animate={{ scale: 1, opacity: 1, y: 0 }} 
-            exit={{ scale: 1.1, opacity: 0 }} 
-            transition={{ type: 'spring', damping: 15, stiffness: 150 }} 
+          <motion.div
+            initial={{ scale: 0.8, opacity: 0, y: -20 }}
+            animate={{ scale: 1, opacity: 1, y: 0 }}
+            exit={{ scale: 1.1, opacity: 0 }}
+            transition={{ type: 'spring', damping: 15, stiffness: 150 }}
             className="absolute left-0 right-0 top-20 pointer-events-none flex justify-center z-[100]"
           >
             <div className="bg-emerald-500 text-white px-8 py-3 rounded-full shadow-[0_10px_30px_rgba(16,185,129,0.5)] font-black text-2xl tracking-tight uppercase border-2 border-emerald-300">
@@ -457,14 +512,21 @@ export default function Minefield({ room, socket, sessionId }: any) {
         {showLog && (
           <motion.div initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }} transition={{ type: 'spring', bounce: 0, duration: 0.4 }} className="absolute bottom-0 left-0 right-0 h-2/3 bg-background border-t border-border z-50 p-6 flex flex-col rounded-t-3xl shadow-[0_-10px_40px_rgba(0,0,0,0.2)]">
             <div className="flex justify-between items-center mb-4">
-              <h3 className="font-bold text-xl flex items-center gap-2"><History className="w-6 h-6"/> Action Log</h3>
-              <button onClick={() => setShowLog(false)} className="p-2 bg-secondary rounded-full hover:bg-secondary/80"><X className="w-5 h-5"/></button>
+              <h3 className="font-bold text-xl flex items-center gap-2"><History className="w-6 h-6" /> Action Log</h3>
+              <button onClick={() => setShowLog(false)} className="p-2 bg-secondary rounded-full hover:bg-secondary/80"><X className="w-5 h-5" /></button>
             </div>
             <div className="flex-1 overflow-y-auto space-y-3 pb-8">
               {room.actionLog?.map((log: any, i: number) => (
                 <div key={i} className="bg-secondary/50 p-3 rounded-xl border border-border flex items-start gap-3">
-                  <span className="text-muted-foreground text-xs whitespace-nowrap mt-1 font-mono">{new Date(log.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit'})}</span>
-                  <p className="text-sm font-medium">{log.text}</p>
+                  <span className="text-muted-foreground text-xs whitespace-nowrap mt-1 font-mono">{new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
+                  <p className="text-sm font-medium">
+                    {log.playerId && (
+                      <strong className={log.playerId === sessionId ? "text-emerald-400" : "text-amber-400"}>
+                        {log.playerId === sessionId ? "You " : "Opponent "}
+                      </strong>
+                    )}
+                    {log.text}
+                  </p>
                 </div>
               ))}
               {(!room.actionLog || room.actionLog.length === 0) && <p className="text-muted-foreground text-center py-8">No actions yet.</p>}
@@ -477,7 +539,7 @@ export default function Minefield({ room, socket, sessionId }: any) {
       {/* Rules Modal */}
       <AnimatePresence>
         {showRules && (
-          <motion.div 
+          <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 20 }}
@@ -489,10 +551,10 @@ export default function Minefield({ room, socket, sessionId }: any) {
                 <X className="w-5 h-5" />
               </button>
             </div>
-            
+
             <div className="space-y-4 text-sm leading-relaxed text-muted-foreground pb-8">
               <p><strong className="text-foreground">Goal:</strong> Find all {room.settings?.mineTreasureCount || 3} of your opponent's treasures before they find yours!</p>
-              
+
               <div className="space-y-2">
                 <h4 className="font-semibold text-foreground text-base">Setup</h4>
                 <p>Hide your treasures and bombs on your grid. Your opponent won't know where they are.</p>
@@ -518,7 +580,7 @@ export default function Minefield({ room, socket, sessionId }: any) {
       {/* Change Game — Requester Waiting Modal */}
       <AnimatePresence>
         {changeGameWaiting && (
-          <motion.div 
+          <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.95 }}
@@ -545,7 +607,7 @@ export default function Minefield({ room, socket, sessionId }: any) {
       {/* Change Game — Opponent Confirmation Modal */}
       <AnimatePresence>
         {changeGameConfirm && (
-          <motion.div 
+          <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.95 }}
