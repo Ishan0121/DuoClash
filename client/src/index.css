@@ -76,7 +76,7 @@
     @apply border-border;
   }
   body {
-    @apply bg-background text-foreground font-sans overscroll-none overflow-hidden;
+    @apply bg-background text-foreground font-sans;
     /* Prevent double-tap zoom on iOS */
     touch-action: pan-x pan-y;
   }

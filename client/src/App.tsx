@@ -10,6 +10,7 @@ import { playClick, playSuccess, playError } from './lib/sounds';
 import GameSelection from './components/GameSelection';
 import Minefield from './components/Minefield';
 import DotsAndBoxes from './components/DotsAndBoxes';
+import TicTacToe from './components/TicTacToe';
 import Lobby from './components/Lobby';
 
 let sessionId = localStorage.getItem('sessionId');
@@ -44,9 +45,10 @@ interface RoomState {
   settings: { greyOutUsed: boolean; timerEnabled: boolean; showOpponentProgress?: boolean, mineGridSize?: number, mineTreasureCount?: number, mineBombCount?: number, dotsGridSize?: number };
   turnStartTime?: number;
   state: GameState | 'selecting_game' | 'selecting_game_conflict' | 'planting';
-  gameType?: 'word' | 'mine' | 'dots' | null;
+  gameType?: 'word' | 'mine' | 'dots' | 'tictactoe' | null;
   dotsLines?: string[];
   dotsBoxes?: { [key: string]: string };
+  tictactoeBoard?: (string | null)[];
   me: PlayerState & { gameVote?: string, isPlanted?: boolean, revealed?: any[], mines?: { index: number, type: 'treasure' | 'bomb' }[] };
   opponent: OpponentState & { gameVote?: string, isPlanted?: boolean, revealed?: any[] } | null;
 }
@@ -399,6 +401,12 @@ export default function App() {
     }
   }
 
+  if (room.gameType === 'tictactoe') {
+    if (room.state === 'ready' || room.state === 'playing') {
+      return <TicTacToe room={room} socket={socket} sessionId={sessionId} />;
+    }
+  }
+
   if (room.state === 'locking' || room.state === 'ready') {
     return (
       <div className="min-h-[100dvh] flex flex-col items-center justify-center p-6 space-y-8 max-w-md mx-auto relative">
@@ -538,6 +546,7 @@ export default function App() {
 
   if (room.state === 'ended') {
     const isWinner = winner?.winnerId === sessionId;
+    const isDraw = winner?.winnerId === 'draw';
     const opponentWordToShow = isWinner ? winner?.loserWord : winner?.winnerWord;
 
     return (
@@ -550,7 +559,7 @@ export default function App() {
           </div>
         )}
         <h2 className="text-5xl font-bold tracking-tighter mt-8">
-          {isWinner ? 'You Won!' : 'You Lost!'}
+          {isDraw ? "It's a Draw!" : isWinner ? 'You Won!' : 'You Lost!'}
         </h2>
 
         {room.gameType === 'word' && (
