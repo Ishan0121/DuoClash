@@ -648,7 +648,7 @@ export default function App() {
                   <span className="text-amber-400">Opp: {room.scores[room.opponent.id] || 0}</span>
                 </div>
               )}
-              <div className={cn("ml-2 px-2 py-0.5 rounded-md text-[10px] font-bold tracking-widest uppercase transition-colors shadow-sm", isMyTurn ? "bg-emerald-500 text-white" : "bg-secondary text-muted-foreground")}>
+              <div className={cn("ml-2 px-2 py-0.5 rounded-md text-[8px] font-bold tracking-widest uppercase transition-colors shadow-sm", isMyTurn ? "bg-emerald-500 text-white" : "bg-secondary text-muted-foreground")}>
                 {isMyTurn ? "Your Turn" : "Opponent"}
               </div>
               <div className="flex ml-2 border border-border/50 rounded-full bg-secondary/30 p-0.5 shadow-sm">

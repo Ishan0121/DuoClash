@@ -240,11 +240,11 @@ export default function DotsAndBoxes({ room, socket, sessionId }: any) {
                   <span className="text-amber-400">Opp: {room.scores[room.opponent.id] || 0}</span>
                 </div>
               )}
-              <div className={cn("ml-2 px-2 py-0.5 rounded-md text-[10px] font-bold tracking-widest uppercase transition-colors shadow-sm", isMyTurn ? "bg-emerald-500 text-white" : "bg-secondary text-muted-foreground")}>
+              <div className={cn("ml-2 px-2 py-0.5 rounded-md text-[8px] font-bold tracking-widest uppercase transition-colors shadow-sm", isMyTurn ? "bg-emerald-500 text-white" : "bg-secondary text-muted-foreground")}>
                 {isMyTurn ? "Your Turn" : "Opponent"}
               </div>
               {room.settings?.timerEnabled && timeLeft !== null && (
-                <div className={cn("ml-1 px-2 py-0.5 rounded-md text-[10px] font-mono font-bold flex items-center gap-1", isMyTurn ? "bg-amber-500/20 text-amber-500" : "bg-secondary text-muted-foreground")}>
+                <div className={cn("ml-1 px-2 py-0.5 rounded-md text-[8px] font-mono font-bold flex items-center gap-1", isMyTurn ? "bg-amber-500/20 text-amber-500" : "bg-secondary text-muted-foreground")}>
                   <Clock className="w-3 h-3" /> {timeLeft}s
                 </div>
               )}
