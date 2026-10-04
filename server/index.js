@@ -96,7 +96,9 @@ function broadcastGameState(roomId) {
         mines: room.players[id].mines
       },
       opponent: null,
-      actionLog: room.actionLog
+      actionLog: room.actionLog,
+      dotsLines: room.dotsLines,
+      dotsBoxes: room.dotsBoxes
     };
 
     const opponentId = playerIds.find(pId => pId !== id);
@@ -149,7 +151,7 @@ io.on('connection', (socket) => {
       scores: { [socket.sessionId]: 0 },
       settings: { 
         greyOutUsed: true, timerEnabled: false, showOpponentProgress: true,
-        mineGridSize: 5, mineTreasureCount: 3, mineBombCount: 1 
+        mineGridSize: 5, mineTreasureCount: 3, mineBombCount: 1, dotsGridSize: 5
       },
       players: {
         [socket.sessionId]: { id: socket.sessionId, word: null, knownTiles: [], gameVote: null, mines: [], revealed: [] }
@@ -197,7 +199,11 @@ io.on('connection', (socket) => {
       if (v1 && v2) {
         if (v1 === v2) {
           room.gameType = v1;
-          room.state = v1 === 'word' ? 'locking' : 'planting';
+          room.state = v1 === 'word' ? 'locking' : (v1 === 'mine' ? 'planting' : 'ready');
+          if (v1 === 'dots') {
+            room.dotsLines = [];
+            room.dotsBoxes = {};
+          }
         } else {
           room.state = 'selecting_game_conflict';
         }
@@ -277,7 +283,7 @@ io.on('connection', (socket) => {
     
     if (myFoundTreasures === totalOpponentTreasures) {
       room.scores[socket.sessionId] = (room.scores[socket.sessionId] || 0) + 1;
-      room.actionLog.push({ text: `Player ${socket.sessionId.substring(0,4)} found the last treasure and won!`, timestamp: Date.now() });
+      room.actionLog.push({ playerId: socket.sessionId, text: `found the last treasure and won!`, timestamp: Date.now() });
       room.state = 'ended';
       clearTurnTimer(roomId);
       io.to(roomId).emit('game_over', {
@@ -286,16 +292,97 @@ io.on('connection', (socket) => {
       });
     } else if (type === 'bomb') {
       // Hit a bomb -> penalty! (lose turn)
-      room.actionLog.push({ text: `Player ${socket.sessionId.substring(0,4)} hit a bomb at (${row}, ${col})!`, timestamp: Date.now() });
+      room.actionLog.push({ playerId: socket.sessionId, text: `hit a bomb at (${row}, ${col})!`, timestamp: Date.now() });
       io.to(roomId).emit('turn_skipped', { playerId: socket.sessionId, reason: 'Hit a bomb!' });
       room.turn = opponentId; // skip their turn
       startTurnTimer(roomId);
     } else {
       // Normal turn switch
-      room.actionLog.push({ text: `Player ${socket.sessionId.substring(0,4)} opened (${row}, ${col}) and found ${type}.`, timestamp: Date.now() });
+      room.actionLog.push({ playerId: socket.sessionId, text: `opened (${row}, ${col}) and found ${type}.`, timestamp: Date.now() });
       room.turn = opponentId;
       startTurnTimer(roomId);
     }
+    broadcastGameState(roomId);
+  });
+
+  // DOTS AND BOXES
+  socket.on('draw_line', ({ roomId, lineId }) => {
+    const room = rooms[roomId];
+    if (!room || room.state !== 'playing' || room.turn !== socket.sessionId || room.gameType !== 'dots') return;
+    
+    if (room.dotsLines.includes(lineId)) return;
+    
+    room.dotsLines.push(lineId);
+    
+    let boxesCompleted = 0;
+    const parts = lineId.split('-');
+    const type = parts[0];
+    const r = parseInt(parts[1]);
+    const c = parseInt(parts[2]);
+    
+    const checkAndClaimBox = (br, bc) => {
+      if (br < 0 || bc < 0 || br >= room.settings.dotsGridSize || bc >= room.settings.dotsGridSize) return 0;
+      const boxId = `${br}-${bc}`;
+      if (room.dotsBoxes[boxId]) return 0;
+      
+      const top = room.dotsLines.includes(`h-${br}-${bc}`);
+      const bottom = room.dotsLines.includes(`h-${br+1}-${bc}`);
+      const left = room.dotsLines.includes(`v-${br}-${bc}`);
+      const right = room.dotsLines.includes(`v-${br}-${bc+1}`);
+      
+      if (top && bottom && left && right) {
+        room.dotsBoxes[boxId] = socket.sessionId;
+        return 1;
+      }
+      return 0;
+    };
+    
+    if (type === 'h') {
+      boxesCompleted += checkAndClaimBox(r - 1, c);
+      boxesCompleted += checkAndClaimBox(r, c);
+    } else {
+      boxesCompleted += checkAndClaimBox(r, c - 1);
+      boxesCompleted += checkAndClaimBox(r, c);
+    }
+    
+    if (boxesCompleted > 0) {
+      room.actionLog.push({ playerId: socket.sessionId, text: `completed a box!`, timestamp: Date.now() });
+      startTurnTimer(roomId);
+      
+      const totalBoxes = room.settings.dotsGridSize * room.settings.dotsGridSize;
+      if (Object.keys(room.dotsBoxes).length === totalBoxes) {
+        room.state = 'ended';
+        clearTurnTimer(roomId);
+        
+        const pIds = Object.keys(room.players);
+        let s1 = 0;
+        let s2 = 0;
+        Object.values(room.dotsBoxes).forEach(ownerId => {
+          if (ownerId === pIds[0]) s1++;
+          else if (ownerId === pIds[1]) s2++;
+        });
+        
+        let winnerId = null;
+        if (s1 > s2) {
+          winnerId = pIds[0];
+          room.scores[pIds[0]] = (room.scores[pIds[0]] || 0) + 1;
+        } else if (s2 > s1) {
+          winnerId = pIds[1];
+          room.scores[pIds[1]] = (room.scores[pIds[1]] || 0) + 1;
+        }
+        
+        io.to(roomId).emit('game_over', {
+          winnerId: winnerId || 'draw',
+          reason: 'all_boxes_claimed'
+        });
+      }
+    } else {
+      room.actionLog.push({ playerId: socket.sessionId, text: `drew a line.`, timestamp: Date.now() });
+      const opponentId = Object.keys(room.players).find(id => id !== socket.sessionId);
+      room.turn = opponentId;
+      startTurnTimer(roomId);
+    }
+    
     broadcastGameState(roomId);
   });
 
@@ -350,7 +437,7 @@ io.on('connection', (socket) => {
     if (opponentId) {
       const row = Math.floor(index / room.settings.mineGridSize);
       const col = index % room.settings.mineGridSize;
-      room.actionLog.push({ text: `Player ${socket.sessionId.substring(0,4)} hinted a ${type} at (${row}, ${col}).`, timestamp: Date.now() });
+      room.actionLog.push({ playerId: socket.sessionId, text: `hinted a ${type} at (${row}, ${col}).`, timestamp: Date.now() });
       io.to(opponentId).emit('receive_visual_hint', { index, type }); // type = 'treasure' or 'bomb'
       broadcastGameState(roomId);
     }
@@ -427,6 +514,8 @@ io.on('connection', (socket) => {
     
     room.state = 'selecting_game';
     room.gameType = null;
+    room.dotsLines = [];
+    room.dotsBoxes = {};
     room.turn = null;
     room.turnStartTime = null;
     room.actionLog = [];

@@ -9,6 +9,7 @@ import { playClick, playSuccess, playError } from './lib/sounds';
 
 import GameSelection from './components/GameSelection';
 import Minefield from './components/Minefield';
+import DotsAndBoxes from './components/DotsAndBoxes';
 import Lobby from './components/Lobby';
 
 let sessionId = localStorage.getItem('sessionId');
@@ -40,10 +41,12 @@ interface RoomState {
   scores?: { [id: string]: number };
   turn: string | null;
   mode: GameMode;
-  settings: { greyOutUsed: boolean; timerEnabled: boolean; showOpponentProgress?: boolean, mineGridSize?: number, mineTreasureCount?: number, mineBombCount?: number };
+  settings: { greyOutUsed: boolean; timerEnabled: boolean; showOpponentProgress?: boolean, mineGridSize?: number, mineTreasureCount?: number, mineBombCount?: number, dotsGridSize?: number };
   turnStartTime?: number;
   state: GameState | 'selecting_game' | 'selecting_game_conflict' | 'planting';
-  gameType?: 'word' | 'mine' | null;
+  gameType?: 'word' | 'mine' | 'dots' | null;
+  dotsLines?: string[];
+  dotsBoxes?: { [key: string]: string };
   me: PlayerState & { gameVote?: string, isPlanted?: boolean, revealed?: any[], mines?: { index: number, type: 'treasure' | 'bomb' }[] };
   opponent: OpponentState & { gameVote?: string, isPlanted?: boolean, revealed?: any[] } | null;
 }
@@ -52,7 +55,7 @@ export default function App() {
   const [room, setRoom] = useState<RoomState | null>(null);
   const [joinCode, setJoinCode] = useState('');
   const [myWord, setMyWord] = useState('');
-  
+
   // Gameplay states
   const [notes, setNotes] = useState<{ char: string; occurrences: string }[]>([]);
   const [knownTiles, setKnownTiles] = useState<string[]>([]);
@@ -63,10 +66,10 @@ export default function App() {
     if (room?.roomId) {
       const savedWord = localStorage.getItem(`myWord_${room.roomId}`);
       if (savedWord) setMyWord(savedWord);
-      
+
       const savedNotes = localStorage.getItem(`notes_${room.roomId}`);
       if (savedNotes) setNotes(JSON.parse(savedNotes));
-      
+
       const savedTiles = localStorage.getItem(`knownTiles_${room.roomId}`);
       const savedScratch = localStorage.getItem(`scratch_${room.roomId}`);
       if (savedScratch) setScratchpadText(savedScratch);
@@ -84,13 +87,13 @@ export default function App() {
       localStorage.setItem(`scratch_${room.roomId}`, scratchpadText);
     }
   }, [myWord, notes, knownTiles, room?.roomId]);
-  
+
   useEffect(() => {
     if (room?.roomId) {
       socket.emit('update_progress', { roomId: room.roomId, knownTiles });
     }
   }, [knownTiles, room?.roomId]);
-  
+
   useEffect(() => {
     if (room?.state === 'playing' && room.settings?.timerEnabled && room.turnStartTime) {
       const interval = setInterval(() => {
@@ -108,12 +111,12 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [waitingForOpponent, setWaitingForOpponent] = useState(false);
   const [askedLetter, setAskedLetter] = useState('');
-  const [keyboardMode, setKeyboardMode] = useState<'action'|'notes'>('action');
+  const [keyboardMode, setKeyboardMode] = useState<'action' | 'notes'>('action');
   const [showScratchpad, setShowScratchpad] = useState(false);
   const [scratchpadText, setScratchpadText] = useState('');
   const [showHintModal, setShowHintModal] = useState(false);
   const [hintInput, setHintInput] = useState('');
-  const [receivedHint, setReceivedHint] = useState<string|null>(null);
+  const [receivedHint, setReceivedHint] = useState<string | null>(null);
   const [timeLeft, setTimeLeft] = useState<number>(60);
   const [shakeSolve, setShakeSolve] = useState(false);
 
@@ -143,14 +146,14 @@ export default function App() {
     socket.on('connect', onConnect);
     socket.on('disconnect', onDisconnect);
     socket.on('room_created', ({ roomId }) => {
-      setRoom(prev => prev ? { ...prev, roomId } : { 
-        roomId, 
-        turn: null, 
+      setRoom(prev => prev ? { ...prev, roomId } : {
+        roomId,
+        turn: null,
         mode: 'automated',
         settings: { greyOutUsed: true, timerEnabled: false, showOpponentProgress: true },
-        state: 'lobby', 
-        me: { id: sessionId as string, word: null }, 
-        opponent: null 
+        state: 'lobby',
+        me: { id: sessionId as string, word: null },
+        opponent: null
       });
     });
 
@@ -186,7 +189,7 @@ export default function App() {
       // We asked for a letter and got the result
       setNotes(prev => [{ char: letter, occurrences: count.toString() }, ...prev]);
       playSuccess();
-      
+
       // Update known tiles
       setKnownTiles(prev => {
         const next = [...prev];
@@ -390,11 +393,17 @@ export default function App() {
     }
   }
 
+  if (room.gameType === 'dots') {
+    if (room.state === 'ready' || room.state === 'playing') {
+      return <DotsAndBoxes room={room} socket={socket} sessionId={sessionId} />;
+    }
+  }
+
   if (room.state === 'locking' || room.state === 'ready') {
     return (
       <div className="min-h-[100dvh] flex flex-col items-center justify-center p-6 space-y-8 max-w-md mx-auto relative">
         <Toaster position="top-center" theme="dark" />
-        
+
         {room.scores && room.opponent && (
           <div className="absolute top-6 left-6 flex items-center bg-secondary/50 border border-border/50 rounded-md px-3 py-1.5 text-xs font-mono font-bold uppercase tracking-wider shadow-inner">
             <span className="text-emerald-400">You: {room.scores[sessionId as string] || 0}</span>
@@ -411,7 +420,7 @@ export default function App() {
 
 
         <div className="w-full space-y-4">
-          <input 
+          <input
             type="text"
             placeholder="Type your word..."
             value={myWord}
@@ -420,7 +429,7 @@ export default function App() {
             className="w-full bg-secondary/50 border border-border rounded-xl px-4 py-4 text-center text-2xl font-mono tracking-widest uppercase focus:outline-none focus:ring-2 focus:ring-ring"
           />
           {!room.me.word ? (
-            <button 
+            <button
               onClick={handleLockWord}
               disabled={myWord.length < 1 || myWord.length > 12}
               className="w-full py-4 rounded-xl bg-primary text-primary-foreground font-semibold text-lg flex items-center justify-center gap-2 active:scale-[0.98] transition-transform disabled:opacity-50"
@@ -429,7 +438,7 @@ export default function App() {
             </button>
           ) : (
             <div className="flex gap-2">
-              <button 
+              <button
                 onClick={handleUnlockWord}
                 className="flex-1 py-4 rounded-xl bg-secondary text-secondary-foreground font-semibold text-lg flex items-center justify-center gap-2 active:scale-[0.98] transition-transform"
               >
@@ -464,13 +473,13 @@ export default function App() {
         )}
 
         <div className="pt-8 w-full flex gap-4">
-          <button 
+          <button
             onClick={() => socket.emit('request_change_game', { roomId: room.roomId })}
             className="flex-1 flex items-center justify-center gap-2 px-6 py-4 rounded-xl bg-primary/10 text-primary font-bold hover:bg-primary/20 transition-colors active:scale-[0.98]"
           >
             <Gamepad2 className="w-5 h-5" /> Change Game
           </button>
-          <button 
+          <button
             onClick={() => socket.emit('leave_room', { roomId: room.roomId })}
             className="flex-1 flex items-center justify-center gap-2 px-6 py-4 rounded-xl bg-destructive/10 text-destructive font-bold hover:bg-destructive/20 transition-colors active:scale-[0.98]"
           >
@@ -481,7 +490,7 @@ export default function App() {
         {/* Change Game Confirmation Modals */}
         <AnimatePresence>
           {changeGameWaiting && (
-            <motion.div 
+            <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
@@ -501,7 +510,7 @@ export default function App() {
         </AnimatePresence>
         <AnimatePresence>
           {changeGameConfirm && (
-            <motion.div 
+            <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
@@ -543,11 +552,11 @@ export default function App() {
         <h2 className="text-5xl font-bold tracking-tighter mt-8">
           {isWinner ? 'You Won!' : 'You Lost!'}
         </h2>
-        
+
         {room.gameType === 'word' && (
           <p className="text-xl text-muted-foreground">Opponent's word was: <span className="font-mono font-bold text-foreground">{opponentWordToShow}</span></p>
         )}
-        
+
         <div className="flex flex-col gap-3 w-full mt-8">
           <button onClick={() => socket.emit('restart_game', { roomId: room.roomId })} className="w-full py-4 rounded-xl bg-primary text-primary-foreground font-bold text-lg active:scale-[0.98] transition-transform shadow-lg shadow-primary/20">Play Again</button>
           <div className="flex gap-3 w-full">
@@ -559,7 +568,7 @@ export default function App() {
         {/* Change Game Confirmation Modals */}
         <AnimatePresence>
           {changeGameWaiting && (
-            <motion.div 
+            <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
@@ -579,7 +588,7 @@ export default function App() {
         </AnimatePresence>
         <AnimatePresence>
           {changeGameConfirm && (
-            <motion.div 
+            <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
@@ -609,15 +618,15 @@ export default function App() {
   return (
     <div className={cn("h-[100dvh] flex flex-col max-w-md mx-auto relative overflow-hidden bg-background transition-all duration-700 border-x-2", isMyTurn ? "shadow-[inset_0_0_100px_rgba(16,185,129,0.15)] border-emerald-500/30" : "border-transparent")}>
       <Toaster position="top-center" theme="dark" />
-      
+
       {/* Turn Popup */}
       <AnimatePresence>
         {justGotTurn && (
-          <motion.div 
-            initial={{ scale: 0.8, opacity: 0, y: -20 }} 
-            animate={{ scale: 1, opacity: 1, y: 0 }} 
-            exit={{ scale: 1.1, opacity: 0 }} 
-            transition={{ type: 'spring', damping: 15, stiffness: 150 }} 
+          <motion.div
+            initial={{ scale: 0.8, opacity: 0, y: -20 }}
+            animate={{ scale: 1, opacity: 1, y: 0 }}
+            exit={{ scale: 1.1, opacity: 0 }}
+            transition={{ type: 'spring', damping: 15, stiffness: 150 }}
             className="absolute left-0 right-0 top-24 pointer-events-none flex justify-center z-[100]"
           >
             <div className="bg-emerald-500 text-white px-8 py-3 rounded-full shadow-[0_10px_30px_rgba(16,185,129,0.5)] font-black text-2xl tracking-tight uppercase border-2 border-emerald-300">
@@ -669,7 +678,7 @@ export default function App() {
       {/* Settings Modal */}
       <AnimatePresence>
         {showSettings && (
-          <motion.div 
+          <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 20 }}
@@ -681,7 +690,7 @@ export default function App() {
                 <X className="w-5 h-5" />
               </button>
             </div>
-            
+
             <div className="space-y-6 pb-8">
               <div className="grid grid-cols-2 gap-3 mb-2">
                 <button onClick={() => { setShowSettings(false); setShowRules(true); }} className="p-3 flex items-center justify-center gap-2 rounded-xl bg-secondary/40 hover:bg-secondary border border-border/50 text-sm font-bold transition-colors">
@@ -715,7 +724,7 @@ export default function App() {
                   />
                 </button>
               </div>
-              <button 
+              <button
                 onClick={() => {
                   socket.emit('leave_room', { roomId: room.roomId });
                   setShowSettings(false);
@@ -762,7 +771,7 @@ export default function App() {
       {/* Rules Modal */}
       <AnimatePresence>
         {showRules && (
-          <motion.div 
+          <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 20 }}
@@ -774,10 +783,10 @@ export default function App() {
                 <X className="w-5 h-5" />
               </button>
             </div>
-            
+
             <div className="space-y-4 text-sm leading-relaxed text-muted-foreground pb-8">
               <p><strong className="text-foreground">Goal:</strong> Guess your opponent's exact word before they guess yours.</p>
-              
+
               <div className="space-y-2">
                 <h4 className="font-semibold text-foreground text-base">How to Play</h4>
                 <p>During your turn, use the <strong className="text-emerald-400">Play / Ask</strong> keyboard to tap a letter. The server will automatically tell you if that letter is in the opponent's word, and if so, exactly how many times it occurs!</p>
@@ -795,24 +804,24 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      
+
       {/* Hint Modal */}
       <AnimatePresence>
         {showHintModal && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 z-[70] bg-background/95 backdrop-blur-sm flex flex-col p-6 items-center justify-center">
             <h3 className="text-2xl font-bold mb-4">Send a Hint</h3>
-            <input 
-              value={hintInput} 
-              onChange={e => setHintInput(e.target.value)} 
-              className="w-full p-4 rounded-xl bg-secondary border border-border mb-4 text-center font-bold" 
-              placeholder="Type hint word..." 
+            <input
+              value={hintInput}
+              onChange={e => setHintInput(e.target.value)}
+              className="w-full p-4 rounded-xl bg-secondary border border-border mb-4 text-center font-bold"
+              placeholder="Type hint word..."
             />
             <div className="flex gap-4 w-full">
               <button onClick={() => setShowHintModal(false)} className="flex-1 py-4 bg-secondary rounded-xl font-bold">Cancel</button>
-              <button 
-                onClick={() => { socket.emit('send_hint', { roomId: room.roomId, hint: hintInput }); setShowHintModal(false); setHintInput(''); toast.success('Hint sent!'); playClick(); }} 
+              <button
+                onClick={() => { socket.emit('send_hint', { roomId: room.roomId, hint: hintInput }); setShowHintModal(false); setHintInput(''); toast.success('Hint sent!'); playClick(); }}
                 className="flex-[2] py-4 bg-primary text-primary-foreground rounded-xl font-bold flex items-center justify-center gap-2"
-              ><Send className="w-5 h-5"/> Send Hint</button>
+              ><Send className="w-5 h-5" /> Send Hint</button>
             </div>
           </motion.div>
         )}
@@ -834,11 +843,11 @@ export default function App() {
         {showScratchpad && (
           <motion.div initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }} className="absolute inset-0 top-24 z-[65] bg-background/95 backdrop-blur-md rounded-t-3xl border-t border-border flex flex-col p-6">
             <div className="flex justify-between items-center mb-4">
-              <h3 className="text-xl font-bold flex items-center gap-2"><NotebookPen className="w-5 h-5"/> My Scratchpad</h3>
-              <button onClick={() => setShowScratchpad(false)} className="p-2 rounded-full bg-secondary"><X className="w-5 h-5"/></button>
+              <h3 className="text-xl font-bold flex items-center gap-2"><NotebookPen className="w-5 h-5" /> My Scratchpad</h3>
+              <button onClick={() => setShowScratchpad(false)} className="p-2 rounded-full bg-secondary"><X className="w-5 h-5" /></button>
             </div>
-            <textarea 
-              value={scratchpadText} 
+            <textarea
+              value={scratchpadText}
               onChange={e => setScratchpadText(e.target.value)}
               className="flex-1 w-full bg-secondary/30 rounded-xl border border-border p-4 resize-none focus:outline-none focus:ring-1 focus:ring-primary"
               placeholder="Write your deductions here... (e.g. word ends in T, second letter is A or E)"
@@ -850,7 +859,7 @@ export default function App() {
       {/* Verification Modal (Lock screen) */}
       <AnimatePresence>
         {verifyRequest && (
-          <motion.div 
+          <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 20 }}
@@ -861,14 +870,14 @@ export default function App() {
               <p className="text-muted-foreground mb-4">Your word: <strong className="text-primary tracking-widest text-lg font-mono">{room.me.word}</strong></p>
               <p className="text-muted-foreground">Opponent guessed: <strong className="text-foreground text-xl">{verifyRequest.letter}</strong></p>
             </div>
-            
+
             <div className="w-full space-y-4">
               <p className="text-sm font-medium">How many times does it appear?</p>
               <div className="flex flex-wrap justify-center gap-2">
                 {Array.from({ length: (room.me.word?.length || 12) + 1 }).map((_, num) => (
-                  <button 
+                  <button
                     key={num}
-                    onClick={() => { setVerifyCount(num); if(num===0) setVerifyPositions([]); }}
+                    onClick={() => { setVerifyCount(num); if (num === 0) setVerifyPositions([]); }}
                     className={cn(
                       "w-10 h-10 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center text-lg font-bold border transition-colors",
                       verifyCount === num ? "bg-primary text-primary-foreground border-primary" : "bg-secondary/50 border-border"
@@ -888,9 +897,9 @@ export default function App() {
                     <button
                       key={idx}
                       onClick={() => {
-                        setVerifyPositions(prev => 
-                          prev.includes(idx) ? prev.filter(p => p !== idx) : 
-                          (prev.length < verifyCount ? [...prev, idx] : prev)
+                        setVerifyPositions(prev =>
+                          prev.includes(idx) ? prev.filter(p => p !== idx) :
+                            (prev.length < verifyCount ? [...prev, idx] : prev)
                         )
                       }}
                       className={cn(
@@ -919,7 +928,7 @@ export default function App() {
       {/* Waiting for Opponent Modal */}
       <AnimatePresence>
         {waitingForOpponent && isMyTurn && room.mode === 'automated' && (
-          <motion.div 
+          <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 20 }}
@@ -935,7 +944,7 @@ export default function App() {
       {/* Change Game — Requester Waiting Modal */}
       <AnimatePresence>
         {changeGameWaiting && (
-          <motion.div 
+          <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.95 }}
@@ -962,7 +971,7 @@ export default function App() {
       {/* Change Game — Opponent Confirmation Modal */}
       <AnimatePresence>
         {changeGameConfirm && (
-          <motion.div 
+          <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.95 }}
@@ -1007,7 +1016,7 @@ export default function App() {
             />
           ))}
         </div>
-        
+
         {room.settings?.showOpponentProgress && room.opponent?.knownTiles && room.opponent.knownTiles.length > 0 && (
           <div className="w-full flex flex-col items-center mt-4">
             <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest mb-1.5">Opponent's Progress</span>
@@ -1031,7 +1040,7 @@ export default function App() {
         ) : (
           <AnimatePresence>
             {notes.map((note, i) => (
-              <motion.div 
+              <motion.div
                 key={i}
                 initial={{ opacity: 0, x: -10 }}
                 animate={{ opacity: 1, x: 0 }}
@@ -1054,7 +1063,7 @@ export default function App() {
       <div className={cn("shrink-0 border-t-2 bg-background p-4 pt-2 transition-all duration-700 relative z-20", isMyTurn ? "border-emerald-500 shadow-[0_-15px_40px_rgba(16,185,129,0.15)] bg-emerald-500/5" : "border-border")}>
         {/* Solve Section */}
         <div className="flex gap-2 mb-4">
-          <input 
+          <input
             type="text"
             placeholder="Solve word..."
             value={solveAttempt}
@@ -1062,11 +1071,11 @@ export default function App() {
             maxLength={room.opponent?.wordLength}
             className={cn("flex-1 bg-secondary/50 border border-border rounded-xl px-4 py-3 text-center font-mono tracking-widest uppercase focus:outline-none focus:ring-1 focus:ring-ring", shakeSolve && "animate-[shake_0.5s_ease-in-out]")}
           />
-            <button 
-              onClick={handleSolve}
-              disabled={solveAttempt.length !== room.opponent?.wordLength}
-              className="px-6 rounded-xl bg-primary text-primary-foreground font-bold active:scale-[0.98] transition-transform disabled:opacity-50"
-            >
+          <button
+            onClick={handleSolve}
+            disabled={solveAttempt.length !== room.opponent?.wordLength}
+            className="px-6 rounded-xl bg-primary text-primary-foreground font-bold active:scale-[0.98] transition-transform disabled:opacity-50"
+          >
             Solve
           </button>
         </div>
@@ -1074,19 +1083,19 @@ export default function App() {
         {/* Toggle & Guidance */}
         <div className="flex flex-col items-center gap-2 mb-3 mt-1">
           <div className="relative flex items-center bg-secondary/30 p-1 rounded-full border border-border/50">
-            <div 
+            <div
               className={cn(
-                "absolute h-7 w-[100px] rounded-full transition-transform duration-300 ease-out shadow-sm", 
+                "absolute h-7 w-[100px] rounded-full transition-transform duration-300 ease-out shadow-sm",
                 keyboardMode === 'action' ? "bg-emerald-500/20 translate-x-0" : "bg-amber-500/20 translate-x-full"
-              )} 
+              )}
             />
-            <button 
+            <button
               onClick={() => setKeyboardMode('action')}
               className={cn("w-[100px] h-7 text-xs font-bold rounded-full z-10 transition-colors", keyboardMode === 'action' ? "text-emerald-500" : "text-muted-foreground hover:text-foreground")}
             >
               Play / Ask
             </button>
-            <button 
+            <button
               onClick={() => setKeyboardMode('notes')}
               className={cn("w-[100px] h-7 text-xs font-bold rounded-full z-10 transition-colors", keyboardMode === 'notes' ? "text-amber-500" : "text-muted-foreground hover:text-foreground")}
             >
@@ -1146,9 +1155,9 @@ export default function App() {
                         onClick={() => setSelectedLetter(char)}
                         className={cn(
                           "flex items-center justify-center rounded-md text-sm font-medium transition-colors border",
-                          selectedLetter === char 
-                            ? "bg-primary text-primary-foreground border-primary" 
-                            : isAsked 
+                          selectedLetter === char
+                            ? "bg-primary text-primary-foreground border-primary"
+                            : isAsked
                               ? "bg-secondary/10 border-border/20 text-muted-foreground/30 opacity-50"
                               : "bg-secondary/40 border-border/50 active:bg-secondary"
                         )}

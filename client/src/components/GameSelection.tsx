@@ -1,10 +1,10 @@
-import { X, Sword, Bomb, Check } from 'lucide-react';
+import { X, Sword, Bomb, Check, Grid } from 'lucide-react';
 
 export default function GameSelection({ room, socket, sessionId }: any) {
   const myVote = room.me.gameVote;
   const oppVote = room.opponent?.gameVote;
 
-  const handleVote = (game: 'word' | 'mine') => {
+  const handleVote = (game: 'word' | 'mine' | 'dots') => {
     socket.emit('vote_game', { roomId: room.roomId, gameVote: game });
   };
 
@@ -60,6 +60,22 @@ export default function GameSelection({ room, socket, sessionId }: any) {
             </div>
           </div>
           {myVote === 'mine' && <Check className="absolute top-4 right-4 w-6 h-6 text-primary" />}
+        </button>
+
+        <button 
+          onClick={() => handleVote('dots')}
+          className={`w-full p-6 rounded-2xl border-2 text-left transition-all relative ${myVote === 'dots' ? 'border-primary bg-primary/10' : 'border-border bg-secondary/30 hover:border-primary/50'}`}
+        >
+          <div className="flex items-center gap-4">
+            <div className="p-3 bg-purple-500/20 text-purple-500 rounded-xl">
+              <Grid className="w-8 h-8" />
+            </div>
+            <div>
+              <h3 className="text-xl font-bold">Dots and Boxes</h3>
+              <p className="text-sm text-muted-foreground">Classic grid game.</p>
+            </div>
+          </div>
+          {myVote === 'dots' && <Check className="absolute top-4 right-4 w-6 h-6 text-primary" />}
         </button>
       </div>
 
