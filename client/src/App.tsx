@@ -9,6 +9,7 @@ import { playClick, playSuccess, playError } from './lib/sounds';
 
 import GameSelection from './components/GameSelection';
 import Minefield from './components/Minefield';
+import DotsAndBoxes from './components/DotsAndBoxes';
 import Lobby from './components/Lobby';
 
 let sessionId = localStorage.getItem('sessionId');
@@ -40,10 +41,12 @@ interface RoomState {
   scores?: { [id: string]: number };
   turn: string | null;
   mode: GameMode;
-  settings: { greyOutUsed: boolean; timerEnabled: boolean; showOpponentProgress?: boolean, mineGridSize?: number, mineTreasureCount?: number, mineBombCount?: number };
+  settings: { greyOutUsed: boolean; timerEnabled: boolean; showOpponentProgress?: boolean, mineGridSize?: number, mineTreasureCount?: number, mineBombCount?: number, dotsGridSize?: number };
   turnStartTime?: number;
   state: GameState | 'selecting_game' | 'selecting_game_conflict' | 'planting';
-  gameType?: 'word' | 'mine' | null;
+  gameType?: 'word' | 'mine' | 'dots' | null;
+  dotsLines?: string[];
+  dotsBoxes?: { [key: string]: string };
   me: PlayerState & { gameVote?: string, isPlanted?: boolean, revealed?: any[], mines?: { index: number, type: 'treasure' | 'bomb' }[] };
   opponent: OpponentState & { gameVote?: string, isPlanted?: boolean, revealed?: any[] } | null;
 }
@@ -387,6 +390,12 @@ export default function App() {
   if (room.gameType === 'mine') {
     if (room.state === 'planting' || room.state === 'ready' || room.state === 'playing') {
       return <Minefield room={room} socket={socket} sessionId={sessionId} />;
+    }
+  }
+
+  if (room.gameType === 'dots') {
+    if (room.state === 'ready' || room.state === 'playing') {
+      return <DotsAndBoxes room={room} socket={socket} sessionId={sessionId} />;
     }
   }
 
