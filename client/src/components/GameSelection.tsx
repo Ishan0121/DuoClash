@@ -1,11 +1,11 @@
-import { X, Sword, Check, Grid, Hash, Pickaxe } from 'lucide-react';
+import { X, Sword, Check, Grid, Hash, Pickaxe, Circle } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 export default function GameSelection({ room, socket, sessionId }: any) {
   const myVote = room.me.gameVote;
   const oppVote = room.opponent?.gameVote;
 
-  const handleVote = (game: 'word' | 'mine' | 'dots' | 'tictactoe') => {
+  const handleVote = (game: 'word' | 'mine' | 'dots' | 'tictactoe' | 'connectfour') => {
     socket.emit('vote_game', { roomId: room.roomId, gameVote: game });
   };
 
@@ -154,6 +154,24 @@ export default function GameSelection({ room, socket, sessionId }: any) {
             </div>
           </div>
           {myVote === 'tictactoe' && <Check className="absolute top-1/2 -translate-y-1/2 right-5 w-6 h-6 text-pink-500" />}
+        </motion.button>
+
+        <motion.button 
+          variants={item}
+          whileTap={{ scale: 0.98 }}
+          onClick={() => handleVote('connectfour')}
+          className={`w-full p-4 rounded-3xl border-2 text-left transition-colors relative ${myVote === 'connectfour' ? 'border-amber-500 bg-amber-500/10' : 'border-border bg-secondary/40 hover:border-amber-500/50'}`}
+        >
+          <div className="flex items-center gap-4">
+            <div className={`p-3 rounded-2xl transition-colors ${myVote === 'connectfour' ? 'bg-amber-500 text-white' : 'bg-amber-500/20 text-amber-500'}`}>
+              <Circle className="w-6 h-6" />
+            </div>
+            <div>
+              <h3 className="text-base font-bold leading-none mb-1 text-foreground">Connect Four</h3>
+              <p className="text-xs text-muted-foreground font-semibold">Four in a row wins.</p>
+            </div>
+          </div>
+          {myVote === 'connectfour' && <Check className="absolute top-1/2 -translate-y-1/2 right-5 w-6 h-6 text-amber-500" />}
         </motion.button>
       </motion.div>
     </div>
