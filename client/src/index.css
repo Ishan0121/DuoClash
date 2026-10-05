@@ -1,6 +1,7 @@
 @import "tailwindcss";
 
 @theme {
+  
   /* FONT OPTIONS: Uncomment ONE of the lines below to test different game styles */
   /* --font-sans: "Fredoka", sans-serif; */
   --font-sans: "Nunito", sans-serif;
