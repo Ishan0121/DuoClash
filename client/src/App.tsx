@@ -11,6 +11,7 @@ import GameSelection from './components/GameSelection';
 import TreasureField from './components/TreasureField';
 import DotsAndBoxes from './components/DotsAndBoxes';
 import TicTacToe from './components/TicTacToe';
+import ConnectFour from './components/ConnectFour';
 import Lobby from './components/Lobby';
 import GameOverOverlay from './components/GameOverOverlay';
 
@@ -46,10 +47,11 @@ interface RoomState {
   settings: { greyOutUsed: boolean; timerEnabled: boolean; showOpponentProgress?: boolean, mineGridSize?: number, mineTreasureCount?: number, mineBombCount?: number, dotsGridSize?: number };
   turnStartTime?: number;
   state: GameState | 'selecting_game' | 'selecting_game_conflict' | 'planting';
-  gameType?: 'word' | 'mine' | 'dots' | 'tictactoe' | null;
+  gameType?: 'word' | 'mine' | 'dots' | 'tictactoe' | 'connectfour' | null;
   dotsLines?: string[];
   dotsBoxes?: { [key: string]: string };
   tictactoeBoard?: (string | null)[];
+  connectfourBoard?: (string | null)[];
   me: PlayerState & { gameVote?: string, isPlanted?: boolean, revealed?: any[], mines?: { index: number, type: 'treasure' | 'bomb' }[] };
   opponent: OpponentState & { gameVote?: string, isPlanted?: boolean, revealed?: any[] } | null;
 }
@@ -427,6 +429,17 @@ export default function App() {
       return (
         <>
           <TicTacToe room={room} socket={socket} sessionId={sessionId} />
+          {room.state === 'ended' && <GameOverOverlay room={room} socket={socket} sessionId={sessionId} winner={winner} changeGameWaiting={changeGameWaiting} changeGameConfirm={changeGameConfirm} setChangeGameWaiting={setChangeGameWaiting} setChangeGameConfirm={setChangeGameConfirm} />}
+        </>
+      );
+    }
+  }
+
+  if (room.gameType === 'connectfour') {
+    if (['ready', 'playing', 'ended'].includes(room.state)) {
+      return (
+        <>
+          <ConnectFour room={room} socket={socket} sessionId={sessionId} />
           {room.state === 'ended' && <GameOverOverlay room={room} socket={socket} sessionId={sessionId} winner={winner} changeGameWaiting={changeGameWaiting} changeGameConfirm={changeGameConfirm} setChangeGameWaiting={setChangeGameWaiting} setChangeGameConfirm={setChangeGameConfirm} />}
         </>
       );

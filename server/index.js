@@ -99,7 +99,8 @@ function broadcastGameState(roomId) {
       actionLog: room.actionLog,
       dotsLines: room.dotsLines,
       dotsBoxes: room.dotsBoxes,
-      tictactoeBoard: room.tictactoeBoard
+      tictactoeBoard: room.tictactoeBoard,
+      connectfourBoard: room.connectfourBoard
     };
 
     const opponentId = playerIds.find(pId => pId !== id);
@@ -208,6 +209,9 @@ io.on('connection', (socket) => {
           }
           if (v1 === 'tictactoe') {
             room.tictactoeBoard = Array(9).fill(null);
+          }
+          if (v1 === 'connectfour') {
+            room.connectfourBoard = Array(42).fill(null);
           }
         } else {
           room.state = 'selecting_game_conflict';
@@ -447,6 +451,71 @@ io.on('connection', (socket) => {
     broadcastGameState(roomId);
   });
 
+  // CONNECT FOUR
+  socket.on('cf_drop_piece', ({ roomId, column }) => {
+    const room = rooms[roomId];
+    if (!room || room.state !== 'playing' || room.turn !== socket.sessionId || room.gameType !== 'connectfour') return;
+    
+    let targetRow = -1;
+    for (let r = 5; r >= 0; r--) {
+      if (room.connectfourBoard[r * 7 + column] === null) {
+        targetRow = r;
+        break;
+      }
+    }
+    
+    if (targetRow === -1) return;
+    
+    const index = targetRow * 7 + column;
+    room.connectfourBoard[index] = socket.sessionId;
+    room.actionLog.push({ playerId: socket.sessionId, text: `dropped a piece.`, timestamp: Date.now() });
+
+    const checkWin = () => {
+      const b = room.connectfourBoard;
+      const p = socket.sessionId;
+      // Horizontal
+      for (let r = 0; r < 6; r++) {
+        for (let c = 0; c < 4; c++) {
+          if (b[r*7+c] === p && b[r*7+c+1] === p && b[r*7+c+2] === p && b[r*7+c+3] === p) return true;
+        }
+      }
+      // Vertical
+      for (let r = 0; r < 3; r++) {
+        for (let c = 0; c < 7; c++) {
+          if (b[r*7+c] === p && b[(r+1)*7+c] === p && b[(r+2)*7+c] === p && b[(r+3)*7+c] === p) return true;
+        }
+      }
+      // Diagonal right
+      for (let r = 0; r < 3; r++) {
+        for (let c = 0; c < 4; c++) {
+          if (b[r*7+c] === p && b[(r+1)*7+c+1] === p && b[(r+2)*7+c+2] === p && b[(r+3)*7+c+3] === p) return true;
+        }
+      }
+      // Diagonal left
+      for (let r = 0; r < 3; r++) {
+        for (let c = 3; c < 7; c++) {
+          if (b[r*7+c] === p && b[(r+1)*7+c-1] === p && b[(r+2)*7+c-2] === p && b[(r+3)*7+c-3] === p) return true;
+        }
+      }
+      return false;
+    };
+
+    if (checkWin()) {
+      room.scores[socket.sessionId] = (room.scores[socket.sessionId] || 0) + 1;
+      room.state = 'ended';
+      clearTurnTimer(roomId);
+      io.to(roomId).emit('game_over', { winnerId: socket.sessionId, reason: 'connectfour_win' });
+    } else if (!room.connectfourBoard.includes(null)) {
+      room.state = 'ended';
+      clearTurnTimer(roomId);
+      io.to(roomId).emit('game_over', { winnerId: 'draw', reason: 'connectfour_draw' });
+    } else {
+      room.turn = Object.keys(room.players).find(id => id !== socket.sessionId);
+      startTurnTimer(roomId);
+    }
+    broadcastGameState(roomId);
+  });
+
   // GENERAL
   socket.on('start_game', ({ roomId }) => {
     const room = rooms[roomId];
@@ -585,6 +654,9 @@ io.on('connection', (socket) => {
     room.dotsBoxes = {};
     if (room.gameType === 'tictactoe') {
       room.tictactoeBoard = Array(9).fill(null);
+    }
+    if (room.gameType === 'connectfour') {
+      room.connectfourBoard = Array(42).fill(null);
     }
     
     room.turn = null;
