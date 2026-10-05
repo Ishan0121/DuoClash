@@ -124,7 +124,7 @@ export default function TicTacToe({ room, socket, sessionId }: any) {
           </button>
           <button
             onClick={() => socket.emit('leave_room', { roomId: room.roomId })}
-            className="flex-1 flex items-center justify-center gap-2 px-6 py-4 rounded-xl bg-destructive/10 text-destructive font-bold hover:bg-destructive/20 transition-colors active:scale-[0.98]"
+            className="flex-1 flex items-center justify-center gap-2 px-6 py-4 rounded-2xl bg-destructive text-destructive-foreground font-black border-2 border-destructive shadow-[0_4px_0_0_rgba(153,27,27,1)] active:translate-y-[4px] active:shadow-none hover:bg-destructive/90 hover:translate-y-[2px] hover:shadow-[0_2px_0_0_rgba(153,27,27,1)] transition-all"
           >
             <X className="w-5 h-5" /> Leave Room
           </button>
@@ -299,7 +299,7 @@ export default function TicTacToe({ room, socket, sessionId }: any) {
                   socket.emit('leave_room', { roomId: room.roomId });
                   setShowSettings(false);
                 }}
-                className="w-full py-3 rounded-xl bg-destructive/10 text-destructive font-bold flex items-center justify-center gap-2 active:scale-[0.98] transition-transform"
+                className="w-full py-3 rounded-2xl bg-destructive text-destructive-foreground font-black flex items-center justify-center gap-2 border-2 border-destructive shadow-[0_4px_0_0_rgba(153,27,27,1)] active:translate-y-[4px] active:shadow-none hover:bg-destructive/90 hover:translate-y-[2px] hover:shadow-[0_2px_0_0_rgba(153,27,27,1)] transition-all"
               >
                 Leave Room
               </button>

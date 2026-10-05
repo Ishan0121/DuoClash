@@ -1,7 +1,13 @@
 @import "tailwindcss";
 
 @theme {
-  --font-sans: "Inter", "sans-serif";
+  /* FONT OPTIONS: Uncomment ONE of the lines below to test different game styles */
+  /* --font-sans: "Fredoka", sans-serif; */
+  --font-sans: "Nunito", sans-serif;
+  /* --font-sans: "Righteous", sans-serif; */
+  /* --font-sans: "Press Start 2P", cursive; */
+  /* --font-sans: "Russo One", sans-serif; */
+  
   --color-border: hsl(var(--border));
   --color-input: hsl(var(--input));
   --color-ring: hsl(var(--ring));

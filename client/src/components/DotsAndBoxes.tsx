@@ -196,11 +196,35 @@ export default function DotsAndBoxes({ room, socket, sessionId }: any) {
           </button>
           <button
             onClick={() => socket.emit('leave_room', { roomId: room.roomId })}
-            className="flex-1 flex items-center justify-center gap-2 px-6 py-4 rounded-xl bg-destructive/10 text-destructive font-bold hover:bg-destructive/20 transition-colors active:scale-[0.98]"
+            className="flex-1 flex items-center justify-center gap-2 px-6 py-4 rounded-2xl bg-destructive text-destructive-foreground font-black border-2 border-destructive shadow-[0_4px_0_0_rgba(153,27,27,1)] active:translate-y-[4px] active:shadow-none hover:bg-destructive/90 hover:translate-y-[2px] hover:shadow-[0_2px_0_0_rgba(153,27,27,1)] transition-all"
           >
             <X className="w-5 h-5" /> Leave Room
           </button>
         </div>
+
+        <AnimatePresence>
+          {changeGameWaiting && (
+            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="fixed inset-0 z-[75] bg-background/95 backdrop-blur-md flex flex-col items-center justify-center p-6 space-y-6">
+              <motion.div animate={{ rotate: 360 }} transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}><Gamepad2 className="w-12 h-12 text-primary" /></motion.div>
+              <h3 className="text-2xl font-bold tracking-tight text-center">Change Game Request Sent</h3>
+              <p className="text-muted-foreground text-center text-sm">Waiting for your opponent to accept...</p>
+              <button onClick={() => { socket.emit('cancel_change_game', { roomId: room.roomId }); setChangeGameWaiting(false); }} className="px-8 py-3 rounded-xl bg-secondary text-secondary-foreground font-semibold active:scale-[0.98] transition-transform">Cancel</button>
+            </motion.div>
+          )}
+        </AnimatePresence>
+        <AnimatePresence>
+          {changeGameConfirm && (
+            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="fixed inset-0 z-[75] bg-background/95 backdrop-blur-md flex flex-col items-center justify-center p-6 space-y-6">
+              <Gamepad2 className="w-12 h-12 text-amber-400" />
+              <h3 className="text-2xl font-bold tracking-tight text-center">Change Game?</h3>
+              <p className="text-muted-foreground text-center text-sm max-w-xs">Your opponent wants to switch to a different game. The current game will be discarded. Do you agree?</p>
+              <div className="flex gap-3 w-full max-w-xs">
+                <button onClick={() => { socket.emit('respond_change_game', { roomId: room.roomId, accepted: false }); setChangeGameConfirm(false); }} className="flex-1 py-4 rounded-xl bg-secondary text-secondary-foreground font-bold active:scale-[0.98] transition-transform">Decline</button>
+                <button onClick={() => { socket.emit('respond_change_game', { roomId: room.roomId, accepted: true }); setChangeGameConfirm(false); }} className="flex-[2] py-4 rounded-xl bg-primary text-primary-foreground font-bold active:scale-[0.98] transition-transform shadow-lg shadow-primary/20">Accept</button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     );
   }
@@ -312,7 +336,7 @@ export default function DotsAndBoxes({ room, socket, sessionId }: any) {
                   socket.emit('leave_room', { roomId: room.roomId });
                   setShowSettings(false);
                 }}
-                className="w-full py-3 rounded-xl bg-destructive/10 text-destructive font-bold flex items-center justify-center gap-2 active:scale-[0.98] transition-transform"
+                className="w-full py-3 rounded-2xl bg-destructive text-destructive-foreground font-black flex items-center justify-center gap-2 border-2 border-destructive shadow-[0_4px_0_0_rgba(153,27,27,1)] active:translate-y-[4px] active:shadow-none hover:bg-destructive/90 hover:translate-y-[2px] hover:shadow-[0_2px_0_0_rgba(153,27,27,1)] transition-all"
               >
                 Leave Room
               </button>

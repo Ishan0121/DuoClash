@@ -34,7 +34,7 @@ const playSound = (type: 'treasure' | 'bomb') => {
   }
 };
 
-export default function Minefield({ room, socket, sessionId }: any) {
+export default function TreasureField({ room, socket, sessionId }: any) {
   const gridSize = room.settings?.mineGridSize || 5;
   const reqTreasures = room.settings?.mineTreasureCount || 3;
   const reqBombs = room.settings?.mineBombCount || 1;
@@ -182,7 +182,7 @@ export default function Minefield({ room, socket, sessionId }: any) {
       <div className="min-h-[100dvh] flex flex-col items-center justify-center p-6 space-y-8 max-w-md mx-auto">
         <Toaster position="top-center" theme="dark" />
         <div className="text-center space-y-2">
-          <h2 className="text-3xl font-bold tracking-tight">Plant Your Mines</h2>
+          <h2 className="text-3xl font-bold tracking-tight">Hide Your Treasures</h2>
           <p className="text-muted-foreground">Hide {reqTreasures} treasures and {reqBombs} bombs.</p>
         </div>
 
@@ -211,9 +211,9 @@ export default function Minefield({ room, socket, sessionId }: any) {
                 disabled={room.me.isPlanted}
                 className={cn(
                   "w-12 h-12 sm:w-14 sm:h-14 rounded-xl border flex items-center justify-center transition-all",
-                  m?.type === 'treasure' ? 'bg-emerald-500/20 border-emerald-500' :
-                    m?.type === 'bomb' ? 'bg-destructive/20 border-destructive' :
-                      'bg-background border-border hover:bg-secondary'
+                  m?.type === 'treasure' ? 'bg-emerald-500/20 border-emerald-500 shadow-[inset_0_4px_8px_rgba(0,0,0,0.6)]' :
+                    m?.type === 'bomb' ? 'bg-destructive/20 border-destructive shadow-[inset_0_4px_8px_rgba(0,0,0,0.6)]' :
+                      'bg-background border-border hover:bg-secondary shadow-[inset_0_2px_0_rgba(255,255,255,0.15),inset_1px_0_0_rgba(255,255,255,0.1),_0_4px_6px_rgba(0,0,0,0.5)]'
                 )}
               >
                 {m?.type === 'treasure' && <Gem className="w-6 h-6 text-emerald-500" />}
@@ -261,11 +261,35 @@ export default function Minefield({ room, socket, sessionId }: any) {
           </button>
           <button
             onClick={() => socket.emit('leave_room', { roomId: room.roomId })}
-            className="flex-1 flex items-center justify-center gap-2 px-6 py-4 rounded-xl bg-destructive/10 text-destructive font-bold hover:bg-destructive/20 transition-colors active:scale-[0.98]"
+            className="flex-1 flex items-center justify-center gap-2 px-6 py-4 rounded-2xl bg-destructive text-destructive-foreground font-black border-2 border-destructive shadow-[0_4px_0_0_rgba(153,27,27,1)] active:translate-y-[4px] active:shadow-none hover:bg-destructive/90 hover:translate-y-[2px] hover:shadow-[0_2px_0_0_rgba(153,27,27,1)] transition-all"
           >
             <X className="w-5 h-5" /> Leave Room
           </button>
         </div>
+
+        <AnimatePresence>
+          {changeGameWaiting && (
+            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="fixed inset-0 z-[75] bg-background/95 backdrop-blur-md flex flex-col items-center justify-center p-6 space-y-6">
+              <motion.div animate={{ rotate: 360 }} transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}><Gamepad2 className="w-12 h-12 text-primary" /></motion.div>
+              <h3 className="text-2xl font-bold tracking-tight text-center">Change Game Request Sent</h3>
+              <p className="text-muted-foreground text-center text-sm">Waiting for your opponent to accept...</p>
+              <button onClick={() => { socket.emit('cancel_change_game', { roomId: room.roomId }); setChangeGameWaiting(false); }} className="px-8 py-3 rounded-xl bg-secondary text-secondary-foreground font-semibold active:scale-[0.98] transition-transform">Cancel</button>
+            </motion.div>
+          )}
+        </AnimatePresence>
+        <AnimatePresence>
+          {changeGameConfirm && (
+            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="fixed inset-0 z-[75] bg-background/95 backdrop-blur-md flex flex-col items-center justify-center p-6 space-y-6">
+              <Gamepad2 className="w-12 h-12 text-amber-400" />
+              <h3 className="text-2xl font-bold tracking-tight text-center">Change Game?</h3>
+              <p className="text-muted-foreground text-center text-sm max-w-xs">Your opponent wants to switch to a different game. The current game will be discarded. Do you agree?</p>
+              <div className="flex gap-3 w-full max-w-xs">
+                <button onClick={() => { socket.emit('respond_change_game', { roomId: room.roomId, accepted: false }); setChangeGameConfirm(false); }} className="flex-1 py-4 rounded-xl bg-secondary text-secondary-foreground font-bold active:scale-[0.98] transition-transform">Decline</button>
+                <button onClick={() => { socket.emit('respond_change_game', { roomId: room.roomId, accepted: true }); setChangeGameConfirm(false); }} className="flex-[2] py-4 rounded-xl bg-primary text-primary-foreground font-bold active:scale-[0.98] transition-transform shadow-lg shadow-primary/20">Accept</button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     );
   }
@@ -346,12 +370,12 @@ export default function Minefield({ room, socket, sessionId }: any) {
                   onClick={() => handleBlockClick(i)}
                   className={cn(
                     "w-12 h-12 sm:w-14 sm:h-14 rounded-xl border flex items-center justify-center transition-all relative overflow-hidden hover:opacity-80",
-                    revealedByOpponent?.type === 'treasure' ? 'bg-emerald-500/20 border-emerald-500' :
-                      revealedByOpponent?.type === 'bomb' ? 'bg-destructive/20 border-destructive' :
-                        revealedByOpponent?.type === 'empty' ? 'bg-secondary/50 border-secondary' :
-                          myMine?.type === 'treasure' ? 'border-emerald-500 border-dashed' :
-                            myMine?.type === 'bomb' ? 'border-destructive border-dashed' :
-                              'bg-background border-border hover:bg-secondary'
+                    revealedByOpponent?.type === 'treasure' ? 'bg-emerald-500/20 border-emerald-500 shadow-[inset_0_4px_8px_rgba(0,0,0,0.6)]' :
+                      revealedByOpponent?.type === 'bomb' ? 'bg-destructive/20 border-destructive shadow-[inset_0_4px_8px_rgba(0,0,0,0.6)]' :
+                        revealedByOpponent?.type === 'empty' ? 'bg-secondary/50 border-secondary shadow-[inset_0_4px_8px_rgba(0,0,0,0.6)]' :
+                          myMine?.type === 'treasure' ? 'border-emerald-500 border-dashed shadow-[inset_0_2px_0_rgba(255,255,255,0.15),inset_1px_0_0_rgba(255,255,255,0.1),_0_4px_6px_rgba(0,0,0,0.5)]' :
+                            myMine?.type === 'bomb' ? 'border-destructive border-dashed shadow-[inset_0_2px_0_rgba(255,255,255,0.15),inset_1px_0_0_rgba(255,255,255,0.1),_0_4px_6px_rgba(0,0,0,0.5)]' :
+                              'bg-background border-border hover:bg-secondary shadow-[inset_0_2px_0_rgba(255,255,255,0.15),inset_1px_0_0_rgba(255,255,255,0.1),_0_4px_6px_rgba(0,0,0,0.5)]'
                   )}
                 >
                   {myMine?.type === 'treasure' && <Gem className={cn("w-6 h-6 text-emerald-500", revealedByOpponent ? "" : "opacity-30")} />}
@@ -363,18 +387,22 @@ export default function Minefield({ room, socket, sessionId }: any) {
 
             const revealed = room.me.revealed?.find((r: any) => r.index === i);
             const vHint = visualHints.find(h => h.index === i);
+            
+            // If the game ended, we can see the opponent's true mine placements
+            const unrevealedMine = room.state === 'ended' && !revealed ? room.opponent?.mines?.find((m: any) => m.index === i) : null;
 
             return (
               <button
                 key={`opp-${i}`}
                 onClick={() => handleBlockClick(i)}
-                disabled={!!revealed}
+                disabled={!!revealed || room.state === 'ended'}
                 className={cn(
                   "w-12 h-12 sm:w-14 sm:h-14 rounded-xl border flex items-center justify-center transition-all relative overflow-hidden",
-                  revealed?.type === 'treasure' ? 'bg-emerald-500/20 border-emerald-500' :
-                    revealed?.type === 'bomb' ? 'bg-destructive/20 border-destructive' :
-                      revealed?.type === 'empty' ? 'bg-secondary/50 border-secondary' :
-                        'bg-background border-border hover:bg-secondary'
+                  revealed?.type === 'treasure' ? 'bg-emerald-500/20 border-emerald-500 shadow-[inset_0_4px_8px_rgba(0,0,0,0.6)]' :
+                    revealed?.type === 'bomb' ? 'bg-destructive/20 border-destructive shadow-[inset_0_4px_8px_rgba(0,0,0,0.6)]' :
+                      revealed?.type === 'empty' ? 'bg-secondary/50 border-secondary shadow-[inset_0_4px_8px_rgba(0,0,0,0.6)]' :
+                        unrevealedMine ? 'bg-secondary/50 border-dashed border-muted-foreground shadow-[inset_0_4px_8px_rgba(0,0,0,0.6)]' : 
+                          'bg-background border-border hover:bg-secondary shadow-[inset_0_2px_0_rgba(255,255,255,0.15),inset_1px_0_0_rgba(255,255,255,0.1),_0_4px_6px_rgba(0,0,0,0.5)] hover:shadow-[inset_0_2px_0_rgba(255,255,255,0.25),inset_1px_0_0_rgba(255,255,255,0.2),_0_6px_10px_rgba(0,0,0,0.7)] hover:-translate-y-0.5'
                 )}
               >
                 {revealed?.type === 'treasure' && (
@@ -386,6 +414,11 @@ export default function Minefield({ room, socket, sessionId }: any) {
                   <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: 'spring' }}>
                     <Bomb className="w-6 h-6 text-destructive" />
                   </motion.div>
+                )}
+                {unrevealedMine && (
+                  <div className="opacity-40 grayscale">
+                    {unrevealedMine.type === 'treasure' ? <Gem className="w-5 h-5" /> : <Bomb className="w-5 h-5" />}
+                  </div>
                 )}
                 {vHint && !revealed && (
                   <span className={cn("absolute inset-0 opacity-50 animate-pulse flex items-center justify-center", vHint.type === 'treasure' ? 'bg-emerald-500' : 'bg-destructive')} />
@@ -437,7 +470,7 @@ export default function Minefield({ room, socket, sessionId }: any) {
                   socket.emit('leave_room', { roomId: room.roomId });
                   setShowSettings(false);
                 }}
-                className="w-full py-3 rounded-xl bg-destructive/10 text-destructive font-bold flex items-center justify-center gap-2 active:scale-[0.98] transition-transform"
+                className="w-full py-3 rounded-2xl bg-destructive text-destructive-foreground font-black flex items-center justify-center gap-2 border-2 border-destructive shadow-[0_4px_0_0_rgba(153,27,27,1)] active:translate-y-[4px] active:shadow-none hover:bg-destructive/90 hover:translate-y-[2px] hover:shadow-[0_2px_0_0_rgba(153,27,27,1)] transition-all"
               >
                 Leave Room
               </button>

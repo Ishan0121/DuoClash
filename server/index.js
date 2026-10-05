@@ -111,7 +111,8 @@ function broadcastGameState(roomId) {
         knownTiles: room.players[opponentId].knownTiles,
         gameVote: room.players[opponentId].gameVote,
         isPlanted: room.players[opponentId].mines && room.players[opponentId].mines.length > 0,
-        revealed: room.players[opponentId].revealed
+        revealed: room.players[opponentId].revealed,
+        mines: room.state === 'ended' ? room.players[opponentId].mines : undefined
       };
     }
     io.to(id).emit('game_state_update', stateForPlayer);
@@ -297,13 +298,20 @@ io.on('connection', (socket) => {
     } else if (type === 'bomb') {
       // Hit a bomb -> penalty! (lose turn)
       room.actionLog.push({ playerId: socket.sessionId, text: `hit a bomb at (${row}, ${col})!`, timestamp: Date.now() });
-      io.to(roomId).emit('turn_skipped', { playerId: socket.sessionId, reason: 'Hit a bomb!' });
+      room.players[opponentId].extraTurns = (room.players[opponentId].extraTurns || 0) + 1;
+      io.to(socket.sessionId).emit('turn_skipped', { playerId: socket.sessionId, reason: 'You hit a bomb, you cannot move! Opponent gets two hits.' });
+      io.to(opponentId).emit('turn_skipped', { playerId: socket.sessionId, reason: 'hit a bomb! You get two hits.' });
       room.turn = opponentId; // skip their turn
       startTurnTimer(roomId);
     } else {
       // Normal turn switch
       room.actionLog.push({ playerId: socket.sessionId, text: `opened (${row}, ${col}) and found ${type}.`, timestamp: Date.now() });
-      room.turn = opponentId;
+      if (room.players[socket.sessionId].extraTurns && room.players[socket.sessionId].extraTurns > 0) {
+        room.players[socket.sessionId].extraTurns -= 1;
+        io.to(roomId).emit('extra_turn', { playerId: socket.sessionId });
+      } else {
+        room.turn = opponentId;
+      }
       startTurnTimer(roomId);
     }
     broadcastGameState(roomId);
