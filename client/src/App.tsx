@@ -23,38 +23,7 @@ if (!sessionId) {
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || '';
 const socket = io(SERVER_URL, { auth: { sessionId } });
 
-type GameState = 'lobby' | 'locking' | 'ready' | 'playing' | 'ended';
-type GameMode = 'automated' | 'call';
-
-interface PlayerState {
-  id: string;
-  word: string | null;
-  isHost?: boolean;
-}
-
-interface OpponentState {
-  id: string;
-  wordLength: number;
-  isLocked: boolean;
-  knownTiles?: string[];
-}
-
-interface RoomState {
-  roomId: string;
-  scores?: { [id: string]: number };
-  turn: string | null;
-  mode: GameMode;
-  settings: { greyOutUsed: boolean; timerEnabled: boolean; showOpponentProgress?: boolean, mineGridSize?: number, mineTreasureCount?: number, mineBombCount?: number, dotsGridSize?: number };
-  turnStartTime?: number;
-  state: GameState | 'selecting_game' | 'selecting_game_conflict' | 'planting';
-  gameType?: 'word' | 'mine' | 'dots' | 'tictactoe' | 'connectfour' | null;
-  dotsLines?: string[];
-  dotsBoxes?: { [key: string]: string };
-  tictactoeBoard?: (string | null)[];
-  connectfourBoard?: (string | null)[];
-  me: PlayerState & { gameVote?: string, isPlanted?: boolean, revealed?: any[], mines?: { index: number, type: 'treasure' | 'bomb' }[] };
-  opponent: OpponentState & { gameVote?: string, isPlanted?: boolean, revealed?: any[] } | null;
-}
+import type { RoomState } from './types/game';
 
 export default function App() {
   const [room, setRoom] = useState<RoomState | null>(null);

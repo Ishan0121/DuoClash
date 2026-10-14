@@ -37,9 +37,11 @@ This project is split into a separated client and server architecture.
 - Socket.io Client
 
 **Backend (`/server`)**
-- Node.js
+- Node.js & TypeScript
 - Express
 - Socket.io
+- Zod (Runtime payload validation)
+- Vitest (Unit test suite)
 - Axios & CORS
 
 ## 🛠️ Local Setup
@@ -53,9 +55,12 @@ Open a terminal and navigate to the server directory:
 ```bash
 cd server
 npm install
-node index.js
+npm run dev     # For development with auto-reload
+npm test        # Run Vitest test suite
+npm run build   # Compile TypeScript to dist/
+npm start       # Start production server
 ```
-*The server typically runs on `http://localhost:3000` (or another port if specified).*
+*The server runs on `http://localhost:3001` (configured to match client proxy).*
 
 ### 2. Start the Client
 
